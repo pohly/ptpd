@@ -1,6 +1,42 @@
 /* sys.c */
 
 #include "../ptpd.h"
+#include <stdarg.h>
+
+Boolean useSyslog;
+
+void message(int priority, const char *format, ...)
+{
+  va_list ap;
+
+  va_start(ap, format);
+  if (useSyslog)
+  {
+    static Boolean logOpened;
+    if (!logOpened)
+    {
+      openlog("ptpd", 0, LOG_USER);
+      logOpened = TRUE;
+    }
+    vsyslog(priority, format, ap);
+  }
+  else
+  {
+    fprintf(stderr, "(ptpd %s) ",
+            priority == LOG_EMERG ? "emergency" :
+            priority == LOG_ALERT ? "alert" :
+            priority == LOG_CRIT ? "critical" :
+            priority == LOG_ERR ? "error" :
+            priority == LOG_WARNING ? "warning" :
+            priority == LOG_NOTICE ? "notice" :
+            priority == LOG_INFO ? "info" :
+            priority == LOG_DEBUG ? "debug" :
+            "???");
+    vfprintf(stderr, format, ap);
+  }
+  va_end(ap);
+}
+
 
 void displayStats(RunTimeOpts *rtOpts, PtpClock *ptpClock)
 {
@@ -12,7 +48,7 @@ void displayStats(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   if(start && rtOpts->csvStats)
   {
     start = 0;
-    printf("state, one way delay, offset from master, drift, variance");
+    INFO("state, one way delay, offset from master, drift, variance\n");
     fflush(stdout);
   }
   
@@ -32,7 +68,7 @@ void displayStats(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   default:                s = "?";     break;
   }
   
-  len += sprintf(sbuf + len, "%s%s", rtOpts->csvStats ? "\n": "\rstate: ", s);
+  len += sprintf(sbuf + len, "%s%s", rtOpts->csvStats ? "": "state: ", s);
   
   if(ptpClock->port_state == PTP_SLAVE)
   {
@@ -50,8 +86,16 @@ void displayStats(RunTimeOpts *rtOpts, PtpClock *ptpClock)
       rtOpts->csvStats ? "" : "drift: ", ptpClock->observed_drift,
       rtOpts->csvStats ? "" : "var: ", ptpClock->observed_variance);
   }
-  
-  write(1, sbuf, rtOpts->csvStats ? len : SCREEN_MAXSZ + 1);
+
+  if (rtOpts->csvStats)
+  {
+    INFO("%s\n", sbuf);
+  }
+  else
+  {
+    /* overwrite the same line over and over again... */
+    INFO("%.*s\r", SCREEN_MAXSZ + 1, sbuf);
+  }
 }
 
 Boolean nanoSleep(TimeInternal *t)

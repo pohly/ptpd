@@ -205,10 +205,10 @@ UInteger32 findIface(Octet *ifaceName, UInteger8 *communicationTechnology,
     return FALSE;
   }
 
-  printf("==> %s %s %s\n", ifv4->ifa_name,
-       inet_ntoa(((struct sockaddr_in *)ifv4->ifa_addr)->sin_addr),
-        ether_ntoa((struct ether_addr *)LLADDR((struct sockaddr_dl *)ifh->ifa_addr))
-        );
+  DBG("==> %s %s %s\n", ifv4->ifa_name,
+      inet_ntoa(((struct sockaddr_in *)ifv4->ifa_addr)->sin_addr),
+      ether_ntoa((struct ether_addr *)LLADDR((struct sockaddr_dl *)ifh->ifa_addr))
+      );
 
   *communicationTechnology = PTP_ETHER;
   memcpy(ifaceName, ifh->ifa_name, IFACE_NAME_LENGTH);

@@ -54,7 +54,7 @@ PtpClock * ptpdStartup(int argc, char **argv, Integer16 *ret, RunTimeOpts *rtOpt
 "-?                show this page\n"
 "\n"
 "-c                run in command line (non-daemon) mode\n"
-"-f FILE           send output to FILE\n"
+"-f FILE           send output to FILE (FILE=syslog writes into the system log)\n"
 "-d                display stats\n"
 "-D                display stats in .csv format\n"
 "\n"
@@ -93,14 +93,21 @@ PtpClock * ptpdStartup(int argc, char **argv, Integer16 *ret, RunTimeOpts *rtOpt
       break;
       
     case 'f':
-      if((fd = creat(optarg, 0400)) != -1)
+      if(!strcmp(optarg, "syslog"))
       {
-        dup2(fd, STDOUT_FILENO);
-        dup2(fd, STDERR_FILENO);
-        noclose = 1;
+        useSyslog = TRUE;
       }
       else
-        PERROR("could not open output file");
+      {
+        if((fd = creat(optarg, 0400)) != -1)
+        {
+          dup2(fd, STDOUT_FILENO);
+          dup2(fd, STDERR_FILENO);
+          noclose = 1;
+        }
+        else
+          PERROR("could not open output file");
+      }
       break;
       
     case 'd':
