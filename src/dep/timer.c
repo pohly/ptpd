@@ -84,3 +84,19 @@ Boolean timerExpired(UInteger16 index, IntervalTimer *itimer)
   return TRUE;
 }
 
+Boolean nanoSleep(TimeInternal *t)
+{
+  struct timespec ts, tr;
+
+  ts.tv_sec = t->seconds;
+  ts.tv_nsec = t->nanoseconds;
+
+  if(nanosleep(&ts, &tr) < 0)
+  {
+    t->seconds = tr.tv_sec;
+    t->nanoseconds = tr.tv_nsec;
+    return FALSE;
+  }
+
+  return TRUE;
+}

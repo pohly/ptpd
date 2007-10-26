@@ -135,19 +135,42 @@ void ptpdShutdown(void);
 /* sys.c */
 /* unix API dependent */
 void displayStats(RunTimeOpts*,PtpClock*);
-Boolean nanoSleep(TimeInternal*);
-void getTime(TimeInternal*);
-void setTime(TimeInternal*);
 UInteger16 getRand(UInteger32*);
-Boolean adjFreq(Integer32);
 
-/* timer.c */
+/**
+ * @defgroup time Time Source
+ *
+ * Interface to the clock which is used to time stamp
+ * packages and which is adjusted by PTPd.
+ *
+ * The intention is to hide different actual implementations
+ * behind one interface:
+ * - system time (gettimeofday())
+ * - NIC time (timer inside the network hardware)
+ * - ...
+ */
+/*@{*/
+/** @file time.c */
+Boolean initTime(RunTimeOpts*, PtpClock*);
+void getTime(TimeInternal*, PtpClock*);
+void setTime(TimeInternal*, PtpClock*);
+Boolean adjFreq(Integer32, PtpClock*);
+/*@}*/
+
+/**
+ * @defgroup timer regular wakeup at different timer intervals
+ *
+ * This timing is always done using the system time of the host.
+ */
+/*@{*/
+/** @file timer.c */
 void initTimer(void);
 void timerUpdate(IntervalTimer*);
 void timerStop(UInteger16,IntervalTimer*);
 void timerStart(UInteger16,UInteger16,IntervalTimer*);
 Boolean timerExpired(UInteger16,IntervalTimer*);
-
+Boolean nanoSleep(TimeInternal*);
+/*@}*/
 
 #endif
 

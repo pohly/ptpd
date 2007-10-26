@@ -98,60 +98,8 @@ void displayStats(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   }
 }
 
-Boolean nanoSleep(TimeInternal *t)
-{
-  struct timespec ts, tr;
-  
-  ts.tv_sec = t->seconds;
-  ts.tv_nsec = t->nanoseconds;
-  
-  if(nanosleep(&ts, &tr) < 0)
-  {
-    t->seconds = tr.tv_sec;
-    t->nanoseconds = tr.tv_nsec;
-    return FALSE;
-  }
-  
-  return TRUE;
-}
-
-void getTime(TimeInternal *time)
-{
-  struct timeval tv;
-  
-  gettimeofday(&tv, 0);
-  time->seconds = tv.tv_sec;
-  time->nanoseconds = tv.tv_usec*1000;
-}
-
-void setTime(TimeInternal *time)
-{
-  struct timeval tv;
-  
-  tv.tv_sec = time->seconds;
-  tv.tv_usec = time->nanoseconds/1000;
-  settimeofday(&tv, 0);
-  
-  NOTIFY("resetting system clock to %ds %dns\n", time->seconds, time->nanoseconds);
-}
-
 UInteger16 getRand(UInteger32 *seed)
 {
   return rand_r((unsigned int*)seed);
-}
-
-Boolean adjFreq(Integer32 adj)
-{
-  struct timex t;
-  
-  if(adj > ADJ_FREQ_MAX)
-    adj = ADJ_FREQ_MAX;
-  else if(adj < -ADJ_FREQ_MAX)
-    adj = -ADJ_FREQ_MAX;
-  
-  t.modes = MOD_FREQUENCY;
-  t.freq = adj*((1<<16)/1000);
-  
-  return !adjtimex(&t);
 }
 

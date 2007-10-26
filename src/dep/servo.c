@@ -15,7 +15,7 @@ void initClock(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   
   /* level clock */
   if(!rtOpts->noAdjust)
-    adjFreq(0);
+    adjFreq(0, ptpClock);
 }
 
 void updateDelay(TimeInternal *send_time, TimeInternal *recv_time,
@@ -103,15 +103,15 @@ void updateClock(RunTimeOpts *rtOpts, PtpClock *ptpClock)
     {
       if(!rtOpts->noResetClock)
       {
-        getTime(&timeTmp);
+        getTime(&timeTmp, ptpClock);
         subTime(&timeTmp, &timeTmp, &ptpClock->offset_from_master);
-        setTime(&timeTmp);
+        setTime(&timeTmp, ptpClock);
         initClock(rtOpts, ptpClock);
       }
       else
       {
         adj = ptpClock->offset_from_master.nanoseconds > 0 ? ADJ_FREQ_MAX : -ADJ_FREQ_MAX;
-        adjFreq(-adj);
+        adjFreq(-adj, ptpClock);
       }
     }
   }
@@ -138,7 +138,7 @@ void updateClock(RunTimeOpts *rtOpts, PtpClock *ptpClock)
     
     /* apply controller output as a clock tick rate adjustment */
     if(!rtOpts->noAdjust)
-      adjFreq(-adj);
+      adjFreq(-adj, ptpClock);
   }
   
   if(rtOpts->displayStats)

@@ -65,7 +65,7 @@ void probe(RunTimeOpts *rtOpts, PtpClock *ptpClock)
       break;
   }
   
-  getTime(&finish);
+  getTime(&finish, ptpClock);
   finish.seconds += PTP_SYNC_INTERVAL_TIMEOUT(ptpClock->sync_interval);
   for(;;)
   {
@@ -90,7 +90,7 @@ void probe(RunTimeOpts *rtOpts, PtpClock *ptpClock)
       fflush(stdout);
     }
     
-    getTime(&now);
+    getTime(&now, ptpClock);
     if( now.seconds > finish.seconds || (now.seconds == finish.seconds
       && now.nanoseconds > finish.nanoseconds) )
       break;

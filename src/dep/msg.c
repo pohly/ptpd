@@ -215,7 +215,7 @@ UInteger8 msgUnloadManagement(void *buf, MsgManagement *manage,
     externalTime.seconds = flip32(*(UInteger32*)(buf + 60));
     externalTime.nanoseconds = flip32(*(Integer32*)(buf + 64));
     toInternalTime(&internalTime, &externalTime, &ptpClock->halfEpoch);
-    setTime(&internalTime);
+    setTime(&internalTime, ptpClock);
     break;
     
   case PTP_MM_UPDATE_DEFAULT_DATA_SET:
@@ -619,7 +619,7 @@ UInteger16 msgPackManagementResponse(void *buf, MsgHeader *header, MsgManagement
     *(UInteger8*)(buf + 55) = PTP_MM_GLOBAL_TIME_DATA_SET;
     *(Integer32*)(buf + 56) = shift16(flip16(24), 1);
     
-    getTime(&internalTime);
+    getTime(&internalTime, ptpClock);
     fromInternalTime(&internalTime, &externalTime, ptpClock->halfEpoch);
     *(Integer32*)(buf + 60) = flip32(externalTime.seconds);
     *(Integer32*)(buf + 64) = flip32(externalTime.nanoseconds);

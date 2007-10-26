@@ -58,7 +58,15 @@ Boolean doInit(RunTimeOpts *rtOpts, PtpClock *ptpClock)
     toState(PTP_FAULTY, rtOpts, ptpClock);
     return FALSE;
   }
-  
+
+  /* initialize timing, may fail e.g. if timer depends on hardware */
+  if(!initTime(rtOpts, ptpClock))
+  {
+    ERROR("failed to initialize timing\n");
+    toState(PTP_FAULTY, rtOpts, ptpClock);
+    return FALSE;
+  }
+
   /* initialize other stuff */
   initData(rtOpts, ptpClock);
   initTimer();
@@ -731,7 +739,7 @@ void issueSync(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   ++ptpClock->last_sync_event_sequence_number;
   ptpClock->grandmaster_sequence_number = ptpClock->last_sync_event_sequence_number;
   
-  getTime(&internalTime);
+  getTime(&internalTime, ptpClock);
   fromInternalTime(&internalTime, &originTimestamp, ptpClock->halfEpoch);
   msgPackSync(ptpClock->msgObuf, FALSE, &originTimestamp, ptpClock);
   
@@ -764,7 +772,7 @@ void issueDelayReq(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   ptpClock->sentDelayReq = TRUE;
   ptpClock->sentDelayReqSequenceId = ++ptpClock->last_sync_event_sequence_number;
   
-  getTime(&internalTime);
+  getTime(&internalTime, ptpClock);
   fromInternalTime(&internalTime, &originTimestamp, ptpClock->halfEpoch);
   msgPackDelayReq(ptpClock->msgObuf, FALSE, &originTimestamp, ptpClock);
   
