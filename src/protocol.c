@@ -741,7 +741,7 @@ void issueSync(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   
   getTime(&internalTime, ptpClock);
   fromInternalTime(&internalTime, &originTimestamp, ptpClock->halfEpoch);
-  msgPackSync(ptpClock->msgObuf, FALSE, &originTimestamp, ptpClock);
+  msgPackSync(ptpClock->msgObuf, FALSE, TRUE, &originTimestamp, ptpClock);
   
   if(!netSendEvent(ptpClock->msgObuf, SYNC_PACKET_LENGTH, &ptpClock->netPath))
     toState(PTP_FAULTY, rtOpts, ptpClock);

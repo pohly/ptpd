@@ -372,7 +372,7 @@ void msgPackHeader(void *buf, PtpClock *ptpClock)
     setFlag((buf + 34), PTP_BOUNDARY_CLOCK);
 }
 
-void msgPackSync(void *buf, Boolean burst,
+void msgPackSync(void *buf, Boolean burst, Boolean ptpAssist,
   TimeRepresentation *originTimestamp, PtpClock *ptpClock)
 {
   *(UInteger8*)(buf +20) = 1;  /* messageType */
@@ -386,7 +386,14 @@ void msgPackSync(void *buf, Boolean burst,
     setFlag((buf + 34), PARENT_STATS);
   else
     clearFlag((buf + 34), PARENT_STATS);
-  
+  /**
+   * @todo: before adding this conditional ptpAssist the PTP_ASSIST
+   * was never set although a Follow_Up was sent - a bug in the original PTPd?
+   */
+  if(ptpAssist)
+    setFlag((buf + 34), PTP_ASSIST);
+  else
+    clearFlag((buf + 34), PTP_ASSIST);
   
   *(Integer32*)(buf + 40) = flip32(originTimestamp->seconds);
   *(Integer32*)(buf + 44) = flip32(originTimestamp->nanoseconds);
