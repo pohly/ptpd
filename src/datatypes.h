@@ -302,6 +302,7 @@ typedef struct {
   Boolean  parent_stats;
   Integer16  observed_variance;
   Integer32  observed_drift;
+  long       adj;
   Boolean  utc_reasonable;
   UInteger8  grandmaster_communication_technology;
   Octet  grandmaster_uuid_field[PTP_UUID_LENGTH];

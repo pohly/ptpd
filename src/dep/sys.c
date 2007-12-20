@@ -48,7 +48,7 @@ void displayStats(PtpClock *ptpClock)
   if(start && ptpClock->runTimeOpts.csvStats)
   {
     start = 0;
-    INFO("state, one way delay, offset from master, drift, variance\n");
+    INFO("state, one way delay, offset from master, drift, variance, clock adjustment (ppb)\n");
     fflush(stdout);
   }
   
@@ -86,6 +86,10 @@ void displayStats(PtpClock *ptpClock)
       ", %s%d" ", %s%d",
       ptpClock->runTimeOpts.csvStats ? "" : "drift: ", ptpClock->observed_drift,
       ptpClock->runTimeOpts.csvStats ? "" : "var: ", ptpClock->observed_variance);
+
+    len += sprintf(sbuf + len,
+      ", %s%ld",
+      ptpClock->runTimeOpts.csvStats ? "" : "adj: ", ptpClock->adj);
   }
 
   if (ptpClock->runTimeOpts.csvStats)

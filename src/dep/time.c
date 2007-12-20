@@ -278,17 +278,48 @@ void adjTime(Integer32 adj, TimeInternal *offset, PtpClock *ptpClock)
   case TIME_SYSTEM_ASSISTED:
   case TIME_SYSTEM: {
     struct timex t;
+    static Boolean maxAdjValid;
+    static long maxAdj;
 
-    if(adj > ADJ_FREQ_MAX)
-      adj = ADJ_FREQ_MAX;
-    else if(adj < -ADJ_FREQ_MAX)
-      adj = -ADJ_FREQ_MAX;
+    if (!maxAdjValid) {
+        t.modes = 0;
+        adjtimex(&t);
+        maxAdj = t.tolerance / ((1<<16)/1000);
+        maxAdjValid = TRUE;
+    }
+
+    /*
+     * The Linux man page for the adjtimex() system call does not
+     * describe limits for frequency. The more recent man page for
+     * the adjtimex call on RH5 does and says that
+     * -tolerance <= frequency <= tolerance
+     * which was confirmed by trying out values just outside that interval.
+     *
+     * Note that this contradicts the comments for struct timex which say
+     * that freq and tolerance have different units (scaled ppm vs ppm).
+     *
+     * We follow the actual implementation on Linux 2.6.22 and do the
+     * range check after scaling.
+     */
 
     t.modes = MOD_FREQUENCY;
-    t.freq = adj*((1<<16)/1000);
-
-    DBGV("adjust system frequency by %d\n", adj);
-    adjtimex(&t);
+    /*
+     * @todo
+     * Where is the official documentation for "scaled  ppm"?
+     * Should this perhaps be adj * (1<<16) / 1000 (more accurate
+     * than multiplying by ((1<<16)/1000) == 65)?
+     */
+    if(adj > maxAdj)
+      ptpClock->adj = maxAdj;
+    else if(adj < -maxAdj)
+      ptpClock->adj = -maxAdj;
+    else
+      ptpClock->adj = adj;
+    t.freq = ptpClock->adj * ((1<<16)/1000);
+    DBGV("adjust system frequency by %d scaled ppm = adj %d ppb (limits %ld/%ld), requested %d ppm\n", t.freq, ptpClock->adj, -maxAdj, maxAdj, adj);
+    if (-1 == adjtimex(&t))
+        ERROR("adjtimex(freq = %d) failed: %s\n",
+              t.freq, strerror(errno));
     break;
   }
   case TIME_BOTH:
@@ -326,6 +357,7 @@ void adjTime(Integer32 adj, TimeInternal *offset, PtpClock *ptpClock)
       ts.set_adj = TRUE;
       ptpClock->netPath.eventSockIFR.ifr_data = (void *)&ts;
       DBGV("adjust NIC frequency by %d ppb\n", ts.adj);
+      ptpClock->adj = ts.adj;
       if (ioctl(ptpClock->netPath.eventSock, E1000_TSYNC_ADJTIME_IOCTL, &ptpClock->netPath.eventSockIFR) < 0) {
         ERROR("could not modify E1000 hardware frequency on %s: %s\n",
               ptpClock->netPath.eventSockIFR.ifr_name,
