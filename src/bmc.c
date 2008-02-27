@@ -4,6 +4,8 @@
 
 void initData(PtpClock *ptpClock)
 {
+  TimeInternal now;
+
   DBG("initData\n");
   
   if(ptpClock->runTimeOpts.slaveOnly)
@@ -39,7 +41,10 @@ void initData(PtpClock *ptpClock)
   ptpClock->epoch_number = ptpClock->runTimeOpts.epochNumber;
   
   /* other stuff */
-  ptpClock->random_seed = ptpClock->port_uuid_field[PTP_UUID_LENGTH-1];
+  timerNow(&now);
+  ptpClock->random_seed = ptpClock->port_uuid_field[PTP_UUID_LENGTH-1] ^
+      now.seconds ^
+      now.nanoseconds;
 }
 
 /* see spec table 18 */
