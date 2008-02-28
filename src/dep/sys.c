@@ -37,18 +37,27 @@ void message(int priority, const char *format, ...)
   va_end(ap);
 }
 
+static size_t sprintfTime(PtpClock *ptpClock, char *buffer, TimeInternal *t, const char *prefix)
+{
+  return sprintf(buffer,
+                 ", %s%s%d.%09d",
+                 ptpClock->runTimeOpts.csvStats ? "" : prefix,
+                 (t->seconds < 0 || t->nanoseconds < 0) ? "-" : "",
+                 abs(t->seconds),
+                 abs(t->nanoseconds));
+}
 
 void displayStats(PtpClock *ptpClock)
 {
   static int start = 1;
-  static char sbuf[SCREEN_BUFSZ];
+  static char sbuf[2 * SCREEN_BUFSZ];
   char *s;
   int len = 0;
   
   if(start && ptpClock->runTimeOpts.csvStats)
   {
     start = 0;
-    INFO("state, one way delay, offset from master, drift, variance, clock adjustment (ppb)\n");
+    INFO("state, one way delay, offset from master, drift, variance, clock adjustment (ppb), slave to master delay, master to slave delay\n");
     fflush(stdout);
   }
   
@@ -73,15 +82,9 @@ void displayStats(PtpClock *ptpClock)
   if(ptpClock->port_state == PTP_SLAVE ||
      (ptpClock->port_state == PTP_MASTER && ptpClock->nic_instead_of_system))
   {
-    len += sprintf(sbuf + len,
-      ", %s%d.%09d" ", %s%d.%09d",
-      ptpClock->runTimeOpts.csvStats ? "" : "owd: ",
-      ptpClock->one_way_delay.seconds,
-      abs(ptpClock->one_way_delay.nanoseconds),
-      ptpClock->runTimeOpts.csvStats ? "" : "ofm: ",
-      ptpClock->offset_from_master.seconds,
-      abs(ptpClock->offset_from_master.nanoseconds));
-    
+    len += sprintfTime(ptpClock, sbuf + len, &ptpClock->one_way_delay, "owd: ");
+    len += sprintfTime(ptpClock, sbuf + len, &ptpClock->offset_from_master, "ofm: ");
+
     len += sprintf(sbuf + len, 
       ", %s%d" ", %s%d",
       ptpClock->runTimeOpts.csvStats ? "" : "drift: ", ptpClock->observed_drift,
@@ -90,6 +93,9 @@ void displayStats(PtpClock *ptpClock)
     len += sprintf(sbuf + len,
       ", %s%ld",
       ptpClock->runTimeOpts.csvStats ? "" : "adj: ", ptpClock->adj);
+
+    len += sprintfTime(ptpClock, sbuf + len, &ptpClock->slave_to_master_delay, "stm: ");
+    len += sprintfTime(ptpClock, sbuf + len, &ptpClock->master_to_slave_delay, "mts: ");
   }
 
   if (ptpClock->runTimeOpts.csvStats)
