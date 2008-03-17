@@ -418,7 +418,7 @@ void msgPackSync(void *buf, Boolean burst, Boolean ptpAssist,
   *(Integer32*)(buf + 120) = shift8(ptpClock->utc_reasonable, 3);
 }
 
-void msgPackDelayReq(void *buf, Boolean burst,
+void msgPackDelayReq(void *buf, Boolean burst, Boolean ptpAssist,
   TimeRepresentation *originTimestamp, PtpClock *ptpClock)
 {
   *(UInteger8*)(buf + 20) = 1;  /* messageType */
@@ -432,6 +432,10 @@ void msgPackDelayReq(void *buf, Boolean burst,
     setFlag((buf + 34), PARENT_STATS);
   else
     clearFlag((buf + 34), PARENT_STATS);
+  if(ptpAssist)
+    setFlag((buf + 34), PTP_ASSIST);
+  else
+    clearFlag((buf + 34), PTP_ASSIST);
   
   *(Integer32*)(buf + 40) = flip32(originTimestamp->seconds);
   *(Integer32*)(buf + 44) = flip32(originTimestamp->nanoseconds);
@@ -464,6 +468,7 @@ void msgPackFollowUp(void *buf, UInteger16 associatedSequenceId,
   *(UInteger8*)(buf + 32) = PTP_FOLLOWUP_MESSAGE;  /* control */
   clearFlag((buf + 34), PTP_SYNC_BURST);
   clearFlag((buf + 34), PARENT_STATS);
+  clearFlag((buf + 34), PTP_ASSIST);
   
   *(Integer32*)(buf + 40) = shift16(flip16(associatedSequenceId), 1);
   *(Integer32*)(buf + 44) = flip32(preciseOriginTimestamp->seconds);
@@ -478,6 +483,7 @@ void msgPackDelayResp(void *buf, MsgHeader *header,
   *(UInteger8*)(buf + 32) = PTP_DELAY_RESP_MESSAGE;  /* control */
   clearFlag((buf + 34), PTP_SYNC_BURST);
   clearFlag((buf + 34), PARENT_STATS);
+  clearFlag((buf + 34), PTP_ASSIST);
   
   *(Integer32*)(buf + 40) = flip32(delayReceiptTimestamp->seconds);
   *(Integer32*)(buf + 44) = flip32(delayReceiptTimestamp->nanoseconds);
@@ -493,6 +499,7 @@ UInteger16 msgPackManagement(void *buf, MsgManagement *manage, PtpClock *ptpCloc
   *(UInteger8*)(buf + 32) = PTP_MANAGEMENT_MESSAGE;  /* control */
   clearFlag((buf + 34), PTP_SYNC_BURST);
   clearFlag((buf + 34), PARENT_STATS);
+  clearFlag((buf + 34), PTP_ASSIST);
   *(Integer32*)(buf + 40) = shift8(manage->targetCommunicationTechnology, 1);
   memcpy(buf + 42, manage->targetUuid, 6);
   *(Integer32*)(buf + 48) = shift16(flip16(manage->targetPortId), 0) | shift16(flip16(MM_STARTING_BOUNDARY_HOPS), 1);
@@ -523,6 +530,7 @@ UInteger16 msgPackManagementResponse(void *buf, MsgHeader *header, MsgManagement
   *(UInteger8*)(buf + 32) = PTP_MANAGEMENT_MESSAGE;  /* control */
   clearFlag((buf + 34), PTP_SYNC_BURST);
   clearFlag((buf + 34), PARENT_STATS);
+  clearFlag((buf + 34), PTP_ASSIST);
   *(Integer32*)(buf + 40) = shift8(header->sourceCommunicationTechnology, 1);
   memcpy(buf + 42, header->sourceUuid, 6);
   *(Integer32*)(buf + 48) = shift16(flip16(header->sourcePortId), 0) | shift16(flip16(MM_STARTING_BOUNDARY_HOPS), 1);

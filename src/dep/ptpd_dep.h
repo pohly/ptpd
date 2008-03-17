@@ -103,7 +103,7 @@ UInteger8 msgUnloadManagement(void*,MsgManagement*,PtpClock*,RunTimeOpts*);
 void msgUnpackManagementPayload(void *buf, MsgManagement *manage);
 void msgPackHeader(void*,PtpClock*);
 void msgPackSync(void*,Boolean,Boolean,TimeRepresentation*,PtpClock*);
-void msgPackDelayReq(void*,Boolean,TimeRepresentation*,PtpClock*);
+void msgPackDelayReq(void*,Boolean,Boolean,TimeRepresentation*,PtpClock*);
 void msgPackFollowUp(void*,UInteger16,TimeRepresentation*,PtpClock*);
 void msgPackDelayResp(void*,MsgHeader*,TimeRepresentation*,PtpClock*);
 UInteger16 msgPackManagement(void*,MsgManagement*,PtpClock*);

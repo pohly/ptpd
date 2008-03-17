@@ -774,7 +774,7 @@ void issueDelayReq(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   
   getTime(&internalTime, ptpClock);
   fromInternalTime(&internalTime, &originTimestamp, ptpClock->halfEpoch);
-  msgPackDelayReq(ptpClock->msgObuf, FALSE, &originTimestamp, ptpClock);
+  msgPackDelayReq(ptpClock->msgObuf, FALSE, FALSE, &originTimestamp, ptpClock);
   
   if(!netSendEvent(ptpClock->msgObuf, DELAY_REQ_PACKET_LENGTH, &ptpClock->netPath))
     toState(PTP_FAULTY, rtOpts, ptpClock);
