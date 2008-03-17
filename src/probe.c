@@ -8,29 +8,29 @@ UInteger8 management_key_array[KEY_ARRAY_LEN] =
 void displayHeader(MsgHeader*);
 void displayManagement(MsgHeader*,MsgManagement*);
 
-void probe(RunTimeOpts *rtOpts, PtpClock *ptpClock)
+void probe(PtpClock *ptpClock)
 {
   UInteger16 i;
   UInteger16 length;
-  TimeInternal interval, now, finish, timestamp;
+  TimeInternal interval, now, finish;
   
   /* check */
-  if(rtOpts->probe_management_key == PTP_MM_UPDATE_DEFAULT_DATA_SET
-    || rtOpts->probe_management_key == PTP_MM_UPDATE_GLOBAL_TIME_PROPERTIES
-    || rtOpts->probe_management_key == PTP_MM_SET_SYNC_INTERVAL)
+  if(ptpClock->runTimeOpts.probe_management_key == PTP_MM_UPDATE_DEFAULT_DATA_SET
+    || ptpClock->runTimeOpts.probe_management_key == PTP_MM_UPDATE_GLOBAL_TIME_PROPERTIES
+    || ptpClock->runTimeOpts.probe_management_key == PTP_MM_SET_SYNC_INTERVAL)
   {
     ERROR("send not supported for that management message\n");
     return;
   }
   
   /* init */
-  if(!netInit(&ptpClock->netPath, rtOpts, ptpClock))
+  if(!netInit(ptpClock))
   {
     ERROR("failed to initialize network\n");
     return;
   }
   
-  initData(rtOpts, ptpClock);
+  initData(ptpClock);
   msgPackHeader(ptpClock->msgObuf, ptpClock);
   
   memset(&ptpClock->msgTmp.manage, 0, sizeof(MsgManagement));
@@ -39,10 +39,10 @@ void probe(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   /* send */
   for(i = 0; i < KEY_ARRAY_LEN; ++i)
   {
-    if(rtOpts->probe_management_key > 0)
+    if(ptpClock->runTimeOpts.probe_management_key > 0)
     {
-      ptpClock->msgTmp.manage.managementMessageKey = rtOpts->probe_management_key;
-      ptpClock->msgTmp.manage.recordKey = rtOpts->probe_record_key;
+      ptpClock->msgTmp.manage.managementMessageKey = ptpClock->runTimeOpts.probe_management_key;
+      ptpClock->msgTmp.manage.recordKey = ptpClock->runTimeOpts.probe_record_key;
     }
     else
       ptpClock->msgTmp.manage.managementMessageKey = management_key_array[i];
@@ -55,27 +55,27 @@ void probe(RunTimeOpts *rtOpts, PtpClock *ptpClock)
     
     printf("\n(sending managementMessageKey %hhu)\n", ptpClock->msgTmp.manage.managementMessageKey); 
     
-    if(!netSendGeneral(ptpClock->msgObuf, length, &ptpClock->netPath))
+    if(!netSendGeneral(ptpClock->msgObuf, length, ptpClock))
     {
       ERROR("failed to send message\n");
       return;
     }
     
-    if(rtOpts->probe_management_key > 0)
+    if(ptpClock->runTimeOpts.probe_management_key > 0)
       break;
   }
   
-  getTime(&finish, ptpClock);
+  timerNow(&finish);
   finish.seconds += PTP_SYNC_INTERVAL_TIMEOUT(ptpClock->sync_interval);
   for(;;)
   {
     interval.seconds = PTP_SYNC_INTERVAL_TIMEOUT(ptpClock->sync_interval);
     interval.nanoseconds = 0;
-    netSelect(&interval, &ptpClock->netPath);
+    netSelect(&interval, ptpClock);
     
-    netRecvEvent(ptpClock->msgIbuf, &timestamp, &ptpClock->netPath);
+    netRecvEvent(ptpClock->msgIbuf, NULL, ptpClock);
     
-    if(netRecvGeneral(ptpClock->msgIbuf, &ptpClock->netPath))
+    if(netRecvGeneral(ptpClock->msgIbuf, ptpClock))
     {
       msgUnpackHeader(ptpClock->msgIbuf, &ptpClock->msgTmpHeader);
       
@@ -90,7 +90,7 @@ void probe(RunTimeOpts *rtOpts, PtpClock *ptpClock)
       fflush(stdout);
     }
     
-    getTime(&now, ptpClock);
+    timerNow(&now);
     if( now.seconds > finish.seconds || (now.seconds == finish.seconds
       && now.nanoseconds > finish.nanoseconds) )
       break;

@@ -155,7 +155,7 @@ void msgUnpackManagement(void *buf, MsgManagement *manage)
 }
 
 UInteger8 msgUnloadManagement(void *buf, MsgManagement *manage,
-  PtpClock *ptpClock, RunTimeOpts *rtOpts)
+  PtpClock *ptpClock)
 {
   TimeInternal internalTime;
   TimeRepresentation externalTime;
@@ -203,12 +203,12 @@ UInteger8 msgUnloadManagement(void *buf, MsgManagement *manage,
     break;
     
   case PTP_MM_SET_SYNC_INTERVAL:
-    rtOpts->syncInterval = *(Integer8*)(buf + 63);
+    ptpClock->runTimeOpts.syncInterval = *(Integer8*)(buf + 63);
     break;
     
   case PTP_MM_SET_SUBDOMAIN:
-    memcpy(rtOpts->subdomainName, buf + 60, 16);
-    DBG("set subdomain to %s\n", rtOpts->subdomainName);
+    memcpy(ptpClock->runTimeOpts.subdomainName, buf + 60, 16);
+    DBG("set subdomain to %s\n", ptpClock->runTimeOpts.subdomainName);
     break;
     
   case PTP_MM_SET_TIME:
@@ -219,13 +219,13 @@ UInteger8 msgUnloadManagement(void *buf, MsgManagement *manage,
     break;
     
   case PTP_MM_UPDATE_DEFAULT_DATA_SET:
-    if(!rtOpts->slaveOnly)
+    if(!ptpClock->runTimeOpts.slaveOnly)
       ptpClock->clock_stratum = *(UInteger8*)(buf + 63);
     memcpy(ptpClock->clock_identifier, buf + 64, 4);
     ptpClock->clock_variance = flip16(*(Integer16*)(buf + 70));
     ptpClock->preferred = *(UInteger8*)(buf + 75);
-    rtOpts->syncInterval = *(UInteger8*)(buf + 79);
-    memcpy(rtOpts->subdomainName, buf + 80, 16);
+    ptpClock->runTimeOpts.syncInterval = *(UInteger8*)(buf + 79);
+    memcpy(ptpClock->runTimeOpts.subdomainName, buf + 80, 16);
     break;
     
   case PTP_MM_UPDATE_GLOBAL_TIME_PROPERTIES:

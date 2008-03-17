@@ -14,6 +14,7 @@
 #define DEFAULT_INBOUND_LATENCY      0       /* in nsec */
 #define DEFAULT_OUTBOUND_LATENCY     0       /* in nsec */
 #define DEFAULT_NO_RESET_CLOCK       FALSE
+#define DEFAULT_NO_ADJUST_CLOCK      FALSE
 #define DEFAULT_AP                   10
 #define DEFAULT_AI                   1000
 #define DEFAULT_DELAY_S              6

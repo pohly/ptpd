@@ -9,7 +9,13 @@ void catch_alarm(int sig)
 {
   elapsed += TIMER_INTERVAL;
   
-  DBGV("catch_alarm: elapsed %d\n", elapsed);
+  /*
+   * DBGV() calls vsyslog() which doesn't seem to be reentrant:
+   * with Linux 2.6.23 and libc 2.5 (RH5) this even locked up the
+   * system.
+   *
+   * DBGV("catch_alarm: elapsed %d\n", elapsed);
+   */
 }
 
 void initTimer(void)
@@ -99,4 +105,13 @@ Boolean nanoSleep(TimeInternal *t)
   }
 
   return TRUE;
+}
+
+void timerNow(TimeInternal *time)
+{
+  struct timeval tv;
+
+  gettimeofday(&tv, 0);
+  time->seconds = tv.tv_sec;
+  time->nanoseconds = tv.tv_usec*1000;
 }

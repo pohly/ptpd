@@ -1,8 +1,8 @@
 #include "../ptpd.h"
 
-void initClock(RunTimeOpts *rtOpts, PtpClock *ptpClock)
+void initClock(PtpClock *ptpClock)
 {
-  DBG("initClock\n");
+  DBG("%sinitClock\n", ptpClock->name);
   
   /* clear vars */
   ptpClock->master_to_slave_delay.seconds = ptpClock->master_to_slave_delay.nanoseconds = 0;
@@ -10,20 +10,23 @@ void initClock(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   ptpClock->observed_variance = 0;
   ptpClock->observed_drift = 0;  /* clears clock servo accumulator (the I term) */
   ptpClock->owd_filt.s_exp = 0;  /* clears one-way delay filter */
-  ptpClock->halfEpoch = ptpClock->halfEpoch || rtOpts->halfEpoch;
-  rtOpts->halfEpoch = 0;
+  ptpClock->halfEpoch = ptpClock->halfEpoch || ptpClock->runTimeOpts.halfEpoch;
+  ptpClock->runTimeOpts.halfEpoch = 0;
   
   /* level clock */
-  if(!rtOpts->noAdjust)
-    adjFreq(0, ptpClock);
+  if(!ptpClock->runTimeOpts.noAdjust)
+    adjTime(0, NULL, ptpClock);
 }
 
 void updateDelay(TimeInternal *send_time, TimeInternal *recv_time,
-  one_way_delay_filter *owd_filt, RunTimeOpts *rtOpts, PtpClock *ptpClock)
+  one_way_delay_filter *owd_filt, PtpClock *ptpClock)
 {
   Integer16 s;
   
-  DBGV("updateDelay\n");
+  DBGV("%supdateDelay send %10ds %11dns recv %10ds %11dns\n",
+       ptpClock->name,
+       send_time->seconds, send_time->nanoseconds,
+       recv_time->seconds, recv_time->nanoseconds);
   
   /* calc 'slave_to_master_delay' */
   subTime(&ptpClock->slave_to_master_delay, recv_time, send_time);
@@ -32,6 +35,11 @@ void updateDelay(TimeInternal *send_time, TimeInternal *recv_time,
   addTime(&ptpClock->one_way_delay, &ptpClock->master_to_slave_delay, &ptpClock->slave_to_master_delay);
   ptpClock->one_way_delay.seconds /= 2;
   ptpClock->one_way_delay.nanoseconds /= 2;
+
+  DBGV("%supdateDelay slave_to_master_delay %10ds %11dns one_way_delay %10ds %11dns\n",
+       ptpClock->name,
+       ptpClock->slave_to_master_delay.seconds, ptpClock->slave_to_master_delay.nanoseconds,
+       ptpClock->one_way_delay.seconds, ptpClock->one_way_delay.nanoseconds);
   
   if(ptpClock->one_way_delay.seconds)
   {
@@ -41,7 +49,7 @@ void updateDelay(TimeInternal *send_time, TimeInternal *recv_time,
   }
   
   /* avoid overflowing filter */
-  s =  rtOpts->s;
+  s =  ptpClock->runTimeOpts.s;
   while(abs(owd_filt->y)>>(31-s))
     --s;
   
@@ -60,13 +68,16 @@ void updateDelay(TimeInternal *send_time, TimeInternal *recv_time,
   owd_filt->nsec_prev = ptpClock->one_way_delay.nanoseconds;
   ptpClock->one_way_delay.nanoseconds = owd_filt->y;
   
-  DBG("delay filter %d, %d\n", owd_filt->y, owd_filt->s_exp);
+  DBG("%sdelay filter %d, %d\n", ptpClock->name, owd_filt->y, owd_filt->s_exp);
 }
 
 void updateOffset(TimeInternal *send_time, TimeInternal *recv_time,
-  offset_from_master_filter *ofm_filt, RunTimeOpts *rtOpts, PtpClock *ptpClock)
+  offset_from_master_filter *ofm_filt, PtpClock *ptpClock)
 {
-  DBGV("updateOffset\n");
+    DBGV("%supdateOffset send %10ds %11dns recv %10ds %11dns\n",
+         ptpClock->name,
+         send_time->seconds, send_time->nanoseconds,
+         recv_time->seconds, recv_time->nanoseconds);
   
   /* calc 'master_to_slave_delay' */
   subTime(&ptpClock->master_to_slave_delay, recv_time, send_time);
@@ -74,6 +85,11 @@ void updateOffset(TimeInternal *send_time, TimeInternal *recv_time,
   /* update 'offset_from_master' */
   subTime(&ptpClock->offset_from_master, &ptpClock->master_to_slave_delay, &ptpClock->one_way_delay);
   
+  DBGV("%supdateOffset master_to_slave_delay %10ds %11dns offset_from_master %10ds %11dns\n",
+       ptpClock->name,
+       ptpClock->master_to_slave_delay.seconds, ptpClock->master_to_slave_delay.nanoseconds,
+       ptpClock->offset_from_master.seconds, ptpClock->offset_from_master.nanoseconds);
+
   if(ptpClock->offset_from_master.seconds)
   {
     /* cannot filter with secs, clear filter */
@@ -86,32 +102,29 @@ void updateOffset(TimeInternal *send_time, TimeInternal *recv_time,
   ofm_filt->nsec_prev = ptpClock->offset_from_master.nanoseconds;
   ptpClock->offset_from_master.nanoseconds = ofm_filt->y;
   
-  DBGV("offset filter %d\n", ofm_filt->y);
+  DBGV("%soffset filter %d\n", ptpClock->name, ofm_filt->y);
 }
 
-void updateClock(RunTimeOpts *rtOpts, PtpClock *ptpClock)
+void updateClock(PtpClock *ptpClock)
 {
   Integer32 adj;
-  TimeInternal timeTmp;
   
-  DBGV("updateClock\n");
+  DBGV("%supdateClock\n", ptpClock->name);
   
   if(ptpClock->offset_from_master.seconds)
   {
     /* if secs, reset clock or set freq adjustment to max */
-    if(!rtOpts->noAdjust)
+    if(!ptpClock->runTimeOpts.noAdjust || ptpClock->nic_instead_of_system)
     {
-      if(!rtOpts->noResetClock)
+      if(!ptpClock->runTimeOpts.noResetClock)
       {
-        getTime(&timeTmp, ptpClock);
-        subTime(&timeTmp, &timeTmp, &ptpClock->offset_from_master);
-        setTime(&timeTmp, ptpClock);
-        initClock(rtOpts, ptpClock);
+        adjTimeOffset(&ptpClock->offset_from_master, ptpClock);
+        initClock(ptpClock);
       }
       else
       {
         adj = ptpClock->offset_from_master.nanoseconds > 0 ? ADJ_FREQ_MAX : -ADJ_FREQ_MAX;
-        adjFreq(-adj, ptpClock);
+        adjTime(-adj, &ptpClock->offset_from_master, ptpClock);
       }
     }
   }
@@ -120,13 +133,13 @@ void updateClock(RunTimeOpts *rtOpts, PtpClock *ptpClock)
     /* the PI controller */
     
     /* no negative or zero attenuation */
-    if(rtOpts->ap < 1)
-     rtOpts->ap = 1;
-    if(rtOpts->ai < 1)
-      rtOpts->ai = 1;
+    if(ptpClock->runTimeOpts.ap < 1)
+     ptpClock->runTimeOpts.ap = 1;
+    if(ptpClock->runTimeOpts.ai < 1)
+      ptpClock->runTimeOpts.ai = 1;
     
     /* the accumulator for the I component */
-    ptpClock->observed_drift += ptpClock->offset_from_master.nanoseconds/rtOpts->ai;
+    ptpClock->observed_drift += ptpClock->offset_from_master.nanoseconds/ptpClock->runTimeOpts.ai;
     
     /* clamp the accumulator to ADJ_FREQ_MAX for sanity */
     if(ptpClock->observed_drift > ADJ_FREQ_MAX)
@@ -134,24 +147,28 @@ void updateClock(RunTimeOpts *rtOpts, PtpClock *ptpClock)
     else if(ptpClock->observed_drift < -ADJ_FREQ_MAX)
       ptpClock->observed_drift = -ADJ_FREQ_MAX;
     
-    adj = ptpClock->offset_from_master.nanoseconds/rtOpts->ap + ptpClock->observed_drift;
+    adj = ptpClock->offset_from_master.nanoseconds/ptpClock->runTimeOpts.ap + ptpClock->observed_drift;
     
     /* apply controller output as a clock tick rate adjustment */
-    if(!rtOpts->noAdjust)
-      adjFreq(-adj, ptpClock);
+    if(!ptpClock->runTimeOpts.noAdjust || ptpClock->nic_instead_of_system)
+      adjTime(-adj, &ptpClock->offset_from_master, ptpClock);
   }
   
-  if(rtOpts->displayStats)
-    displayStats(rtOpts, ptpClock);
+  if(ptpClock->runTimeOpts.displayStats)
+    displayStats(ptpClock);
   
-  DBGV("master-to-slave delay:   %10ds %11dns\n",
+  DBGV("%smaster-to-slave delay:   %10ds %11dns\n",
+    ptpClock->name,
     ptpClock->master_to_slave_delay.seconds, ptpClock->master_to_slave_delay.nanoseconds);
-  DBGV("slave-to-master delay:   %10ds %11dns\n",
+  DBGV("%sslave-to-master delay:   %10ds %11dns\n",
+       ptpClock->name,
     ptpClock->slave_to_master_delay.seconds, ptpClock->slave_to_master_delay.nanoseconds);
-  DBGV("one-way delay:           %10ds %11dns\n",
+  DBGV("%sone-way delay:           %10ds %11dns\n",
+    ptpClock->name,
     ptpClock->one_way_delay.seconds, ptpClock->one_way_delay.nanoseconds);
-  DBG("offset from master:      %10ds %11dns\n",
+  DBG("%soffset from master:      %10ds %11dns\n",
+    ptpClock->name,
     ptpClock->offset_from_master.seconds, ptpClock->offset_from_master.nanoseconds);
-  DBG("observed drift: %10d\n", ptpClock->observed_drift);
+  DBG("%sobserved drift: %10d\n", ptpClock->name, ptpClock->observed_drift);
 }
 

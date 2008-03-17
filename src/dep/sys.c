@@ -38,14 +38,14 @@ void message(int priority, const char *format, ...)
 }
 
 
-void displayStats(RunTimeOpts *rtOpts, PtpClock *ptpClock)
+void displayStats(PtpClock *ptpClock)
 {
   static int start = 1;
   static char sbuf[SCREEN_BUFSZ];
   char *s;
   int len = 0;
   
-  if(start && rtOpts->csvStats)
+  if(start && ptpClock->runTimeOpts.csvStats)
   {
     start = 0;
     INFO("state, one way delay, offset from master, drift, variance\n");
@@ -68,26 +68,27 @@ void displayStats(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   default:                s = "?";     break;
   }
   
-  len += sprintf(sbuf + len, "%s%s", rtOpts->csvStats ? "": "state: ", s);
+  len += sprintf(sbuf + len, "%s%s%s", ptpClock->runTimeOpts.csvStats ? "": "state: ", ptpClock->name, s);
   
-  if(ptpClock->port_state == PTP_SLAVE)
+  if(ptpClock->port_state == PTP_SLAVE ||
+     (ptpClock->port_state == PTP_MASTER && ptpClock->nic_instead_of_system))
   {
     len += sprintf(sbuf + len,
       ", %s%d.%09d" ", %s%d.%09d",
-      rtOpts->csvStats ? "" : "owd: ",
+      ptpClock->runTimeOpts.csvStats ? "" : "owd: ",
       ptpClock->one_way_delay.seconds,
       abs(ptpClock->one_way_delay.nanoseconds),
-      rtOpts->csvStats ? "" : "ofm: ",
+      ptpClock->runTimeOpts.csvStats ? "" : "ofm: ",
       ptpClock->offset_from_master.seconds,
       abs(ptpClock->offset_from_master.nanoseconds));
     
     len += sprintf(sbuf + len, 
       ", %s%d" ", %s%d",
-      rtOpts->csvStats ? "" : "drift: ", ptpClock->observed_drift,
-      rtOpts->csvStats ? "" : "var: ", ptpClock->observed_variance);
+      ptpClock->runTimeOpts.csvStats ? "" : "drift: ", ptpClock->observed_drift,
+      ptpClock->runTimeOpts.csvStats ? "" : "var: ", ptpClock->observed_variance);
   }
 
-  if (rtOpts->csvStats)
+  if (ptpClock->runTimeOpts.csvStats)
   {
     INFO("%s\n", sbuf);
   }

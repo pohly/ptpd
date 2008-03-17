@@ -20,16 +20,16 @@ void addTime(TimeInternal*,TimeInternal*,TimeInternal*);
 void subTime(TimeInternal*,TimeInternal*,TimeInternal*);
 
 /* bmc.c */
-UInteger8 bmc(ForeignMasterRecord*,RunTimeOpts*,PtpClock*);
+UInteger8 bmc(ForeignMasterRecord*,PtpClock*);
 void m1(PtpClock*);
 void s1(MsgHeader*,MsgSync*,PtpClock*);
-void initData(RunTimeOpts*,PtpClock*);
+void initData(PtpClock*);
 
 /* probe.c */
-void probe(RunTimeOpts*,PtpClock*);
+void probe(PtpClock*);
 
 /* protocol.c */
-void protocol(RunTimeOpts*,PtpClock*);
+void protocol(PtpClock*);
 
 
 #endif

@@ -2,12 +2,12 @@
 
 #include "ptpd.h"
 
-void initData(RunTimeOpts *rtOpts, PtpClock *ptpClock)
+void initData(PtpClock *ptpClock)
 {
   DBG("initData\n");
   
-  if(rtOpts->slaveOnly)
-    rtOpts->clockStratum = 255;
+  if(ptpClock->runTimeOpts.slaveOnly)
+    ptpClock->runTimeOpts.clockStratum = 255;
   
   /* Port configuration data set */
   ptpClock->last_sync_event_sequence_number = 0;
@@ -19,24 +19,24 @@ void initData(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   ptpClock->clock_communication_technology = ptpClock->port_communication_technology;
   memcpy(ptpClock->clock_uuid_field, ptpClock->port_uuid_field, PTP_UUID_LENGTH);
   ptpClock->clock_port_id_field = 0;
-  ptpClock->clock_stratum = rtOpts->clockStratum;
-  memcpy(ptpClock->clock_identifier, rtOpts->clockIdentifier, PTP_CODE_STRING_LENGTH);
-  ptpClock->sync_interval = rtOpts->syncInterval;
+  ptpClock->clock_stratum = ptpClock->runTimeOpts.clockStratum;
+  memcpy(ptpClock->clock_identifier, ptpClock->runTimeOpts.clockIdentifier, PTP_CODE_STRING_LENGTH);
+  ptpClock->sync_interval = ptpClock->runTimeOpts.syncInterval;
   
-  ptpClock->clock_variance = rtOpts->clockVariance;  /* see spec 7.7 */
+  ptpClock->clock_variance = ptpClock->runTimeOpts.clockVariance;  /* see spec 7.7 */
   ptpClock->clock_followup_capable = CLOCK_FOLLOWUP;
-  ptpClock->preferred = rtOpts->clockPreferred;
+  ptpClock->preferred = ptpClock->runTimeOpts.clockPreferred;
   ptpClock->initializable = INITIALIZABLE;
   ptpClock->external_timing = EXTERNAL_TIMING;
   ptpClock->is_boundary_clock = BOUNDARY_CLOCK;
-  memcpy(ptpClock->subdomain_name, rtOpts->subdomainName, PTP_SUBDOMAIN_NAME_LENGTH);
+  memcpy(ptpClock->subdomain_name, ptpClock->runTimeOpts.subdomainName, PTP_SUBDOMAIN_NAME_LENGTH);
   ptpClock->number_ports = NUMBER_PORTS;
   ptpClock->number_foreign_records = 0;
-  ptpClock->max_foreign_records = rtOpts->max_foreign_records;
+  ptpClock->max_foreign_records = ptpClock->runTimeOpts.max_foreign_records;
   
   /* Global time properties data set */
-  ptpClock->current_utc_offset = rtOpts->currentUtcOffset;
-  ptpClock->epoch_number = rtOpts->epochNumber;
+  ptpClock->current_utc_offset = ptpClock->runTimeOpts.currentUtcOffset;
+  ptpClock->epoch_number = ptpClock->runTimeOpts.epochNumber;
   
   /* other stuff */
   ptpClock->random_seed = ptpClock->port_uuid_field[PTP_UUID_LENGTH-1];
@@ -279,9 +279,9 @@ B:
     return -1;  /* B1 */
 }
 
-UInteger8 bmcStateDecision(MsgHeader *header, MsgSync *sync, RunTimeOpts *rtOpts, PtpClock *ptpClock)
+UInteger8 bmcStateDecision(MsgHeader *header, MsgSync *sync, PtpClock *ptpClock)
 {
-  if(rtOpts->slaveOnly)
+  if(ptpClock->runTimeOpts.slaveOnly)
   {
     s1(header, sync, ptpClock);
     return PTP_SLAVE;
@@ -312,7 +312,7 @@ UInteger8 bmcStateDecision(MsgHeader *header, MsgSync *sync, RunTimeOpts *rtOpts
   }
 }
 
-UInteger8 bmc(ForeignMasterRecord *foreign, RunTimeOpts *rtOpts, PtpClock *ptpClock)
+UInteger8 bmc(ForeignMasterRecord *foreign, PtpClock *ptpClock)
 {
   Integer16 i, best;
   
@@ -333,6 +333,6 @@ UInteger8 bmc(ForeignMasterRecord *foreign, RunTimeOpts *rtOpts, PtpClock *ptpCl
   DBGV("bmc: best record %d\n", best);
   ptpClock->foreign_record_best = best;
   
-  return bmcStateDecision(&foreign[best].header, &foreign[best].sync, rtOpts, ptpClock);
+  return bmcStateDecision(&foreign[best].header, &foreign[best].sync, ptpClock);
 }
 
