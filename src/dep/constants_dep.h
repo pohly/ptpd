@@ -57,16 +57,19 @@
 #endif
 
 /**
- * This value used to be used as limit for adjtimex() and
- * the clock servo. The limits of adjtimex() are now determined
- * at runtime in dep/time.c, but the servo still uses this
- * limit as sanity check.
+ * This value used to be used as limit for adjtimex() and the clock
+ * servo. The limits of adjtimex() are now determined at runtime in
+ * dep/time.c and are larger than before because also the us/tick
+ * value is adjusted, but the servo still uses this limit as sanity
+ * check. Now that the underlying system is no longer the limiting
+ * factor, perhaps the value should be configurable?
  *
- * The value was 5120000, but that turned out to be too small on a
- * system under load: as soon as the observed drift got larger than
- * 5120000, it was clamped and the frequency adjustment remained
- * too small to drive the offset back to zero. Here's a log of that
- * situation:
+ * The value was 5120000 (based on the maximum adjustment possible by
+ * adjusting just the frequency in adjtimex()), but that turned out to
+ * be too small on a system under load: as soon as the observed drift
+ * got larger than 5120000, it was clamped and the frequency
+ * adjustment remained too small to drive the offset back to
+ * zero. Here's a log of that situation:
  *
 00:00:10 knlcst4 ptpd: state, one way delay, offset from master, drift, variance, clock adjustment (ppb)
 00:00:10 knlcst4 ptpd: init
@@ -132,7 +135,7 @@
 01:51:57 knlcst4 ptpd: slv, 0.003304196, 0.000091696, 8517, 0, 652
 [cycle repeats]
  */
-#define ADJ_FREQ_MAX  51200000
+#define ADJ_FREQ_MAX  512000000
 
 /* UDP/IPv4 dependent */
 
