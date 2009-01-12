@@ -285,6 +285,7 @@ void adjTime(Integer32 adj, TimeInternal *offset, PtpClock *ptpClock)
     static long tickRes; /* USER_HZ * 1000 [ppb] */
     long tickAdj;
     long freqAdj;
+    int res;
 
     if (!maxAdjValid) {
         userHZ = sysconf(_SC_CLK_TCK);
@@ -362,10 +363,34 @@ void adjTime(Integer32 adj, TimeInternal *offset, PtpClock *ptpClock)
          -maxAdj, maxAdj,
          minTick, maxTick);
 
-    if (-1 == adjtimex(&t))
+    res = adjtimex(&t);
+    switch (res) {
+    case -1:
         ERROR("adjtimex(freq = %d) failed: %s\n",
               t.freq, strerror(errno));
-    break;
+        break;
+    case TIME_OK:
+        INFO("  -> TIME_OK\n");
+        break;
+    case TIME_INS:
+        ERROR("adjtimex -> insert leap second?!\n");
+        break;
+    case TIME_DEL:
+        ERROR("adjtimex -> delete leap second?!\n");
+        break;
+    case TIME_OOP:
+        ERROR("adjtimex -> leap second in progress?!\n");
+        break;
+    case TIME_WAIT:
+        ERROR("adjtimex -> leap second has occurred?!\n");
+        break;
+    case TIME_BAD:
+        ERROR("adjtimex -> time bad\n");
+        break;
+    default:
+        ERROR("adjtimex -> unknown result %d\n", res);
+        break;
+    }
   }
   case TIME_BOTH:
   case TIME_NIC: {
