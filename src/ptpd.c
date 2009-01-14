@@ -19,6 +19,7 @@ int main(int argc, char **argv)
   rtOpts.inboundLatency.nanoseconds = DEFAULT_INBOUND_LATENCY;
   rtOpts.outboundLatency.nanoseconds = DEFAULT_OUTBOUND_LATENCY;
   rtOpts.noResetClock = DEFAULT_NO_RESET_CLOCK;
+  rtOpts.noAdjust = DEFAULT_NO_ADJUST_CLOCK;
   rtOpts.s = DEFAULT_DELAY_S;
   rtOpts.ap = DEFAULT_AP;
   rtOpts.ai = DEFAULT_AI;
@@ -30,12 +31,12 @@ int main(int argc, char **argv)
   
   if(rtOpts.probe)
   {
-    probe(&rtOpts, ptpClock);
+    probe(ptpClock);
   }
   else
   {
     /* do the protocol engine */
-    protocol(&rtOpts, ptpClock);
+    protocol(ptpClock);
   }
   
   ptpdShutdown();

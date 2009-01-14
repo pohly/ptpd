@@ -1,18 +1,63 @@
 /* sys.c */
 
 #include "../ptpd.h"
+#include <stdarg.h>
 
-void displayStats(RunTimeOpts *rtOpts, PtpClock *ptpClock)
+Boolean useSyslog;
+
+void message(int priority, const char *format, ...)
+{
+  va_list ap;
+
+  va_start(ap, format);
+  if (useSyslog)
+  {
+    static Boolean logOpened;
+    if (!logOpened)
+    {
+      openlog("ptpd", 0, LOG_USER);
+      logOpened = TRUE;
+    }
+    vsyslog(priority, format, ap);
+  }
+  else
+  {
+    fprintf(stderr, "(ptpd %s) ",
+            priority == LOG_EMERG ? "emergency" :
+            priority == LOG_ALERT ? "alert" :
+            priority == LOG_CRIT ? "critical" :
+            priority == LOG_ERR ? "error" :
+            priority == LOG_WARNING ? "warning" :
+            priority == LOG_NOTICE ? "notice" :
+            priority == LOG_INFO ? "info" :
+            priority == LOG_DEBUG ? "debug" :
+            "???");
+    vfprintf(stderr, format, ap);
+  }
+  va_end(ap);
+}
+
+static size_t sprintfTime(PtpClock *ptpClock, char *buffer, TimeInternal *t, const char *prefix)
+{
+  return sprintf(buffer,
+                 ", %s%s%d.%09d",
+                 ptpClock->runTimeOpts.csvStats ? "" : prefix,
+                 (t->seconds < 0 || t->nanoseconds < 0) ? "-" : "",
+                 abs(t->seconds),
+                 abs(t->nanoseconds));
+}
+
+void displayStats(PtpClock *ptpClock)
 {
   static int start = 1;
-  static char sbuf[SCREEN_BUFSZ];
+  static char sbuf[2 * SCREEN_BUFSZ];
   char *s;
   int len = 0;
   
-  if(start && rtOpts->csvStats)
+  if(start && ptpClock->runTimeOpts.csvStats)
   {
     start = 0;
-    printf("state, one way delay, offset from master, drift, variance");
+    INFO("state, one way delay, offset from master, drift, variance, clock adjustment (ppb), slave to master delay, master to slave delay\n");
     fflush(stdout);
   }
   
@@ -32,82 +77,40 @@ void displayStats(RunTimeOpts *rtOpts, PtpClock *ptpClock)
   default:                s = "?";     break;
   }
   
-  len += sprintf(sbuf + len, "%s%s", rtOpts->csvStats ? "\n": "\rstate: ", s);
+  len += sprintf(sbuf + len, "%s%s%s", ptpClock->runTimeOpts.csvStats ? "": "state: ", ptpClock->name, s);
   
-  if(ptpClock->port_state == PTP_SLAVE)
+  if(ptpClock->port_state == PTP_SLAVE ||
+     (ptpClock->port_state == PTP_MASTER && ptpClock->nic_instead_of_system))
   {
-    len += sprintf(sbuf + len,
-      ", %s%d.%09d" ", %s%d.%09d",
-      rtOpts->csvStats ? "" : "owd: ",
-      ptpClock->one_way_delay.seconds,
-      abs(ptpClock->one_way_delay.nanoseconds),
-      rtOpts->csvStats ? "" : "ofm: ",
-      ptpClock->offset_from_master.seconds,
-      abs(ptpClock->offset_from_master.nanoseconds));
-    
+    len += sprintfTime(ptpClock, sbuf + len, &ptpClock->one_way_delay, "owd: ");
+    len += sprintfTime(ptpClock, sbuf + len, &ptpClock->offset_from_master, "ofm: ");
+
     len += sprintf(sbuf + len, 
       ", %s%d" ", %s%d",
-      rtOpts->csvStats ? "" : "drift: ", ptpClock->observed_drift,
-      rtOpts->csvStats ? "" : "var: ", ptpClock->observed_variance);
-  }
-  
-  write(1, sbuf, rtOpts->csvStats ? len : SCREEN_MAXSZ + 1);
-}
+      ptpClock->runTimeOpts.csvStats ? "" : "drift: ", ptpClock->observed_drift,
+      ptpClock->runTimeOpts.csvStats ? "" : "var: ", ptpClock->observed_variance);
 
-Boolean nanoSleep(TimeInternal *t)
-{
-  struct timespec ts, tr;
-  
-  ts.tv_sec = t->seconds;
-  ts.tv_nsec = t->nanoseconds;
-  
-  if(nanosleep(&ts, &tr) < 0)
+    len += sprintf(sbuf + len,
+      ", %s%ld",
+      ptpClock->runTimeOpts.csvStats ? "" : "adj: ", ptpClock->adj);
+
+    len += sprintfTime(ptpClock, sbuf + len, &ptpClock->slave_to_master_delay, "stm: ");
+    len += sprintfTime(ptpClock, sbuf + len, &ptpClock->master_to_slave_delay, "mts: ");
+  }
+
+  if (ptpClock->runTimeOpts.csvStats)
   {
-    t->seconds = tr.tv_sec;
-    t->nanoseconds = tr.tv_nsec;
-    return FALSE;
+    INFO("%s\n", sbuf);
   }
-  
-  return TRUE;
-}
-
-void getTime(TimeInternal *time)
-{
-  struct timeval tv;
-  
-  gettimeofday(&tv, 0);
-  time->seconds = tv.tv_sec;
-  time->nanoseconds = tv.tv_usec*1000;
-}
-
-void setTime(TimeInternal *time)
-{
-  struct timeval tv;
-  
-  tv.tv_sec = time->seconds;
-  tv.tv_usec = time->nanoseconds/1000;
-  settimeofday(&tv, 0);
-  
-  NOTIFY("resetting system clock to %ds %dns\n", time->seconds, time->nanoseconds);
+  else
+  {
+    /* overwrite the same line over and over again... */
+    INFO("%.*s\r", SCREEN_MAXSZ + 1, sbuf);
+  }
 }
 
 UInteger16 getRand(UInteger32 *seed)
 {
   return rand_r((unsigned int*)seed);
-}
-
-Boolean adjFreq(Integer32 adj)
-{
-  struct timex t;
-  
-  if(adj > ADJ_FREQ_MAX)
-    adj = ADJ_FREQ_MAX;
-  else if(adj < -ADJ_FREQ_MAX)
-    adj = -ADJ_FREQ_MAX;
-  
-  t.modes = MOD_FREQUENCY;
-  t.freq = adj*((1<<16)/1000);
-  
-  return !adjtimex(&t);
 }
 

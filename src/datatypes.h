@@ -205,8 +205,70 @@ typedef struct
   MsgSync  sync;
 } ForeignMasterRecord;
 
+typedef enum {
+  TIME_SYSTEM,     /**< use and control system time */
+  TIME_NIC,        /**< use and control time inside network interface */
+  /**
+   * a combination of PTP between NICs (as in TIME_NIC) plus a local
+   * synchronization between NIC and system time:
+   * - NIC time is controlled via PTP packets, main time seen
+   *   by PTPd is the NIC time
+   * - system_to_nic and nic_to_system delays are provided by
+   *   device driver on request
+   * - time.c adapts NIC time to system time on master and system time
+   *   to NIC time on slaves by feeding these offsets into another
+   *   instance of the clock servo (as in TIME_SYSTEM)
+   *
+   * The command line options only apply to one clock sync and
+   * the defaults are used for the other:
+   * - NIC time: default values for clock control (adjust and reset)
+   *   and servo (coefficients), configurable PTP
+   * - system time: configurable clock control and servo, PTP options do
+   *   not apply
+   */
+  TIME_BOTH,
+  /**
+   * time used and controlled by PTP is the system time, but hardware
+   * assistance in the NIC is used to time stamp packages
+   */
+  TIME_SYSTEM_ASSISTED,
+
+  TIME_MAX
+} Time;
+
+/* program options set at run-time */
+typedef struct {
+  Integer8  syncInterval;
+  Octet  subdomainName[PTP_SUBDOMAIN_NAME_LENGTH];
+  Octet  clockIdentifier[PTP_CODE_STRING_LENGTH];
+  UInteger32  clockVariance;
+  UInteger8  clockStratum;
+  Boolean  clockPreferred;
+  Integer16  currentUtcOffset;
+  UInteger16  epochNumber;
+  Octet  ifaceName[IFACE_NAME_LENGTH];
+  Boolean  noResetClock;
+  Boolean  noAdjust;
+  Boolean  displayStats;
+  Boolean  csvStats;
+  Octet  unicastAddress[NET_ADDRESS_LENGTH];
+  Integer16  ap, ai;
+  Integer16  s;
+  TimeInternal  inboundLatency, outboundLatency;
+  Integer16  max_foreign_records;
+  Boolean  slaveOnly;
+  Boolean  probe;
+  UInteger8  probe_management_key;
+  UInteger16  probe_record_key;
+  Boolean  halfEpoch;
+  Time time;
+} RunTimeOpts;
+
 /* main program data structure */
 typedef struct {
+  /* settings associate with this instance of PtpClock */
+  RunTimeOpts runTimeOpts;
+
   /* Default data set */
   UInteger8  clock_communication_technology;
   Octet  clock_uuid_field[PTP_UUID_LENGTH];
@@ -240,6 +302,7 @@ typedef struct {
   Boolean  parent_stats;
   Integer16  observed_variance;
   Integer32  observed_drift;
+  long       adj;
   Boolean  utc_reasonable;
   UInteger8  grandmaster_communication_technology;
   Octet  grandmaster_uuid_field[PTP_UUID_LENGTH];
@@ -303,7 +366,32 @@ typedef struct {
   
   UInteger16  Q;
   UInteger16  R;
-  
+
+  /**
+   * TRUE when the clock is used to synchronize NIC and system time and
+   * the process is the PTP_MASTER. The offset and adjustment calculation
+   * is always "master (= NIC) to slave (= system time)" and PTP_SLAVEs
+   * update their system time, but the master needs to invert the
+   * clock adjustment and control NIC time instead. This way
+   * the master's system time is propagated to slaves.
+   */
+  Boolean nic_instead_of_system;
+
+  /**
+   * TRUE if outgoing packets are not to be time-stamped in advance.
+   * Instead the outgoing time stamp is generated as it is transmitted
+   * and must be sent in a follow-up message.
+   */
+  Boolean delayedTiming;
+
+  /**
+   * a prefix to be inserted before messages about the clock:
+   * may be empty, but not NULL
+   *
+   * used to distinguish multiple active clock servos per process
+   */
+  const char *name;
+
   Boolean  sentDelayReq;
   UInteger16  sentDelayReqSequenceId;
   Boolean  waitingForFollow;
@@ -316,35 +404,7 @@ typedef struct {
   IntervalTimer  itimer[TIMER_ARRAY_SIZE];
   
   NetPath netPath;
-  
-} PtpClock;
 
-/* program options set at run-time */
-typedef struct {
-  Integer8  syncInterval;
-  Octet  subdomainName[PTP_SUBDOMAIN_NAME_LENGTH];
-  Octet  clockIdentifier[PTP_CODE_STRING_LENGTH];
-  UInteger32  clockVariance;
-  UInteger8  clockStratum;
-  Boolean  clockPreferred;
-  Integer16  currentUtcOffset;
-  UInteger16  epochNumber;
-  Octet  ifaceName[IFACE_NAME_LENGTH];
-  Boolean  noResetClock;
-  Boolean  noAdjust;
-  Boolean  displayStats;
-  Boolean  csvStats;
-  Octet  unicastAddress[NET_ADDRESS_LENGTH];
-  Integer16  ap, ai;
-  Integer16  s;
-  TimeInternal  inboundLatency, outboundLatency;
-  Integer16  max_foreign_records;
-  Boolean  slaveOnly;
-  Boolean  probe;
-  UInteger8  probe_management_key;
-  UInteger16  probe_record_key;
-  Boolean  halfEpoch;
-  
-} RunTimeOpts;
+} PtpClock;
 
 #endif

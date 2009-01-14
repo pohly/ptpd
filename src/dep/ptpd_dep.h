@@ -10,6 +10,7 @@
 #include<errno.h>
 #include<signal.h>
 #include<fcntl.h>
+#include<syslog.h>
 #include<sys/stat.h>
 #include<time.h>
 #include<sys/time.h>
@@ -19,22 +20,35 @@
 #include<sys/ioctl.h>
 #include<arpa/inet.h>
 
+/**
+ * route output either into syslog or stderr, depending on global useSyslog settings
+ * @param priority       same as for syslog()
+ * @param format         printf style format string
+ */
+void message(int priority, const char *format, ...);
+
+/**
+ * if TRUE then message() will print via syslog(); no init required and
+ * can be reverted to FALSE at any time
+ */
+extern Boolean useSyslog;
 
 /* system messages */
-#define ERROR(x, ...)  fprintf(stderr, "(ptpd error) " x, ##__VA_ARGS__)
-#define PERROR(x, ...) fprintf(stderr, "(ptpd error) " x ": %m\n", ##__VA_ARGS__)
-#define NOTIFY(x, ...) fprintf(stderr, "(ptpd notice) " x, ##__VA_ARGS__)
+#define ERROR(x, ...)  message(LOG_ERR, x, ##__VA_ARGS__)
+#define PERROR(x, ...) message(LOG_ERR, x ": %m\n", ##__VA_ARGS__)
+#define NOTIFY(x, ...) message(LOG_NOTICE, x, ##__VA_ARGS__)
+#define INFO(x, ...)   message(LOG_INFO, x, ##__VA_ARGS__)
 
 /* debug messages */
 #ifdef PTPD_DBGV
 #define PTPD_DBG
-#define DBGV(x, ...) fprintf(stderr, "(ptpd debug) " x, ##__VA_ARGS__)
+#define DBGV(x, ...) message(LOG_DEBUG, x, ##__VA_ARGS__)
 #else
 #define DBGV(x, ...)
 #endif
 
 #ifdef PTPD_DBG
-#define DBG(x, ...)  fprintf(stderr, "(ptpd debug) " x, ##__VA_ARGS__)
+#define DBG(x, ...)  message(LOG_DEBUG, x, ##__VA_ARGS__)
 #else
 #define DBG(x, ...)
 #endif
@@ -85,11 +99,11 @@ void msgUnpackDelayReq(void*,MsgDelayReq*);
 void msgUnpackFollowUp(void*,MsgFollowUp*);
 void msgUnpackDelayResp(void*,MsgDelayResp*);
 void msgUnpackManagement(void*,MsgManagement*);
-UInteger8 msgUnloadManagement(void*,MsgManagement*,PtpClock*,RunTimeOpts*);
+UInteger8 msgUnloadManagement(void*,MsgManagement*,PtpClock*);
 void msgUnpackManagementPayload(void *buf, MsgManagement *manage);
 void msgPackHeader(void*,PtpClock*);
-void msgPackSync(void*,Boolean,TimeRepresentation*,PtpClock*);
-void msgPackDelayReq(void*,Boolean,TimeRepresentation*,PtpClock*);
+void msgPackSync(void*,Boolean,Boolean,TimeRepresentation*,PtpClock*);
+void msgPackDelayReq(void*,Boolean,Boolean,TimeRepresentation*,PtpClock*);
 void msgPackFollowUp(void*,UInteger16,TimeRepresentation*,PtpClock*);
 void msgPackDelayResp(void*,MsgHeader*,TimeRepresentation*,PtpClock*);
 UInteger16 msgPackManagement(void*,MsgManagement*,PtpClock*);
@@ -97,21 +111,21 @@ UInteger16 msgPackManagementResponse(void*,MsgHeader*,MsgManagement*,PtpClock*);
 
 /* net.c */
 /* linux API dependent */
-Boolean netInit(NetPath*,RunTimeOpts*,PtpClock*);
-Boolean netShutdown(NetPath*);
-int netSelect(TimeInternal*,NetPath*);
-ssize_t netRecvEvent(Octet*,TimeInternal*,NetPath*);
-ssize_t netRecvGeneral(Octet*,NetPath*);
-ssize_t netSendEvent(Octet*,UInteger16,NetPath*);
-ssize_t netSendGeneral(Octet*,UInteger16,NetPath*);
+Boolean netInit(PtpClock*);
+Boolean netShutdown(PtpClock*);
+int netSelect(TimeInternal*,PtpClock*);
+ssize_t netRecvEvent(Octet*,TimeInternal*,PtpClock*);
+ssize_t netRecvGeneral(Octet*,PtpClock*);
+ssize_t netSendEvent(Octet*,UInteger16,TimeInternal*,PtpClock*);
+ssize_t netSendGeneral(Octet*,UInteger16,PtpClock*);
 
 /* servo.c */
-void initClock(RunTimeOpts*,PtpClock*);
+void initClock(PtpClock*);
 void updateDelay(TimeInternal*,TimeInternal*,
-  one_way_delay_filter*,RunTimeOpts*,PtpClock*);
+  one_way_delay_filter*,PtpClock*);
 void updateOffset(TimeInternal*,TimeInternal*,
-  offset_from_master_filter*,RunTimeOpts*,PtpClock*);
-void updateClock(RunTimeOpts*,PtpClock*);
+  offset_from_master_filter*,PtpClock*);
+void updateClock(PtpClock*);
 
 /* startup.c */
 /* unix API dependent */
@@ -120,20 +134,119 @@ void ptpdShutdown(void);
 
 /* sys.c */
 /* unix API dependent */
-void displayStats(RunTimeOpts*,PtpClock*);
-Boolean nanoSleep(TimeInternal*);
-void getTime(TimeInternal*);
-void setTime(TimeInternal*);
+void displayStats(PtpClock*);
 UInteger16 getRand(UInteger32*);
-Boolean adjFreq(Integer32);
 
-/* timer.c */
+/**
+ * @defgroup time Time Source
+ *
+ * Interface to the clock which is used to time stamp
+ * packages and which is adjusted by PTPd.
+ *
+ * The intention is to hide different actual implementations
+ * behind one interface:
+ * - system time (gettimeofday())
+ * - NIC time (timer inside the network hardware)
+ * - ...
+ */
+/*@{*/
+/** @file time.c */
+Boolean initTime(PtpClock*);
+void getTime(TimeInternal*, PtpClock*);
+void setTime(TimeInternal*, PtpClock*);
+
+/**
+ * Adjusts the time, ideally by varying the clock rate.
+ *
+ * @param adj      frequency adjustment: a time source which supports that ignores the offset
+ * @param offset   offset (reference time - local time) from last measurement: a time source which
+ *                 cannot adjust the frequence must fall back to this cruder method (may be NULL)
+ */
+void adjTime(Integer32 adj, TimeInternal *offset, PtpClock*);
+
+/**
+ * Adjusts the time by shifting the clock.
+ *
+ * @param offset   this value must be substracted from clock (might be negative)
+ */
+void adjTimeOffset(TimeInternal *offset, PtpClock*);
+
+/**
+ * Gets the time when the latest outgoing packet left the host.
+ *
+ * There is no way to identify the packet the time stamp belongs to,
+ * so this must be called after sending each packet until the time
+ * stamp for the packet is available. This can be some (hopefully
+ * small) time after the packet was passed to the IP stack.
+ *
+ * There is no mechanism either to determine packet loss and thus a
+ * time stamp which never becomes available.
+ *
+ * @todo Can such packet loss occur?
+ *
+ * Does not work with TIME_SYSTEM.
+ *
+ * @retval sendTimeStamp    set to the time when the packet left the host
+ * @return TRUE if the time stamp was available
+ */
+Boolean getSendTime(TimeInternal *sendTimeStamp, PtpClock*);
+
+/**
+ * Gets the time when the packet identified by the given attributes
+ * was received by the host.
+ *
+ * Because the arrival of packets is out of the control of PTPd, the
+ * time stamping must support unique identification of which time
+ * stamp belongs to which packet.
+ *
+ * Due to packet loss in the receive queue, there can be time stamps
+ * without IP packets. getReceiveTime() automatically discards stale
+ * time stamps, including the ones that where returned by
+ * getReceiveTime(). This implies that there is not guarantee that
+ * calling getReceiveTime() more than once for the same packet
+ * will always return a result.
+ *
+ * Due to hardware limitations only one time stamp might be stored
+ * until queried by the NIC driver; this can lead to packets without
+ * time stamp. This needs to be handled by the caller of
+ * getReceiveTime(), for example by ignoring the packet.
+ *
+ * Does not work with TIME_SYSTEM.
+ *
+ * @retval recvTimeStamp    set to the time when the packet entered the host, if available
+ * @return TRUE if the time stamp was available
+ */
+Boolean getReceiveTime(TimeInternal *recvTimeStamp,
+                       Octet sourceUuid[PTP_UUID_LENGTH],
+                       UInteger16 sequenceId, PtpClock*);
+
+/** called regularly every second while process is idle */
+void timeNoActivity(PtpClock*);
+
+/**
+ * called while still in the old state and before entering a new one:
+ * transition is relevant for hardware assisted timing
+ */
+void timeToState(UInteger8 state, PtpClock *ptpClock);
+
+/*@}*/
+
+/**
+ * @defgroup timer regular wakeup at different timer intervals
+ *
+ * This timing is always done using the system time of the host.
+ */
+/*@{*/
+/** @file timer.c */
 void initTimer(void);
 void timerUpdate(IntervalTimer*);
 void timerStop(UInteger16,IntervalTimer*);
 void timerStart(UInteger16,UInteger16,IntervalTimer*);
 Boolean timerExpired(UInteger16,IntervalTimer*);
-
+Boolean nanoSleep(TimeInternal*);
+/** gets the current system time */
+void timerNow(TimeInternal*);
+/*@}*/
 
 #endif
 

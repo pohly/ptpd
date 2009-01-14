@@ -35,7 +35,7 @@ void catch_close(int sig)
 
 void ptpdShutdown()
 {
-  netShutdown(&ptpClock->netPath);
+  netShutdown(ptpClock);
   
   free(ptpClock->foreign);
   free(ptpClock);
@@ -44,9 +44,9 @@ void ptpdShutdown()
 PtpClock * ptpdStartup(int argc, char **argv, Integer16 *ret, RunTimeOpts *rtOpts)
 {
   int c, fd = -1, nondaemon = 0, noclose = 0;
-  
+
   /* parse command line arguments */
-  while( (c = getopt(argc, argv, "?cf:dDxta:w:b:u:l:o:e:hy:m:gps:i:v:n:k:r")) != -1 ) {
+  while( (c = getopt(argc, argv, "?cf:dDz:xta:w:b:u:l:o:e:hy:m:gps:i:v:n:k:r")) != -1 ) {
     switch(c) {
     case '?':
       printf(
@@ -54,10 +54,17 @@ PtpClock * ptpdStartup(int argc, char **argv, Integer16 *ret, RunTimeOpts *rtOpt
 "-?                show this page\n"
 "\n"
 "-c                run in command line (non-daemon) mode\n"
-"-f FILE           send output to FILE\n"
+"-f FILE           send output to FILE (FILE=syslog writes into the system log)\n"
 "-d                display stats\n"
 "-D                display stats in .csv format\n"
 "\n"
+"-z CLOCK          selects which timer is used and controlled\n"
+"                  system = the host's system time (default)\n"
+"                  nic = the network interface\n"
+"                  both = NIC time is synchronized over the network via PTP\n"
+"                         and system time against NIC via local PTP\n"
+"                  assisted = system time is synchronized across network via\n"
+"                             NIC assisted time stamping\n"
 "-x                do not reset the clock if off by more than one second\n"
 "-t                do not adjust the system clock\n"
 "-a NUMBER,NUMBER  specify clock servo P and I attenuations\n"
@@ -93,14 +100,21 @@ PtpClock * ptpdStartup(int argc, char **argv, Integer16 *ret, RunTimeOpts *rtOpt
       break;
       
     case 'f':
-      if((fd = creat(optarg, 0400)) != -1)
+      if(!strcmp(optarg, "syslog"))
       {
-        dup2(fd, STDOUT_FILENO);
-        dup2(fd, STDERR_FILENO);
-        noclose = 1;
+        useSyslog = TRUE;
       }
       else
-        PERROR("could not open output file");
+      {
+        if((fd = creat(optarg, 0400)) != -1)
+        {
+          dup2(fd, STDOUT_FILENO);
+          dup2(fd, STDERR_FILENO);
+          noclose = 1;
+        }
+        else
+          PERROR("could not open output file");
+      }
       break;
       
     case 'd':
@@ -110,12 +124,34 @@ PtpClock * ptpdStartup(int argc, char **argv, Integer16 *ret, RunTimeOpts *rtOpt
       break;
       
     case 'D':
-#ifndef PTPD_DBG
       rtOpts->displayStats = TRUE;
       rtOpts->csvStats = TRUE;
-#endif
       break;
       
+    case 'z':
+      if(!strcasecmp(optarg, "nic"))
+      {
+        rtOpts->time = TIME_NIC;
+      }
+      else if(!strcasecmp(optarg, "system"))
+      {
+        rtOpts->time = TIME_SYSTEM;
+      }
+      else if(!strcasecmp(optarg, "both"))
+      {
+        rtOpts->time = TIME_BOTH;
+      }
+      else if(!strcasecmp(optarg, "assisted"))
+      {
+        rtOpts->time = TIME_SYSTEM_ASSISTED;
+      }
+      else
+      {
+        ERROR("Unsupported -z clock '%s'.\n", optarg);
+        *ret = 1;
+      }
+      break;
+
     case 'x':
       rtOpts->noResetClock = TRUE;
       break;
@@ -222,6 +258,7 @@ PtpClock * ptpdStartup(int argc, char **argv, Integer16 *ret, RunTimeOpts *rtOpt
   }
   
   ptpClock = (PtpClock*)calloc(1, sizeof(PtpClock));
+  ptpClock->name = "";
   if(!ptpClock)
   {
     PERROR("failed to allocate memory for protocol engine data");
@@ -230,6 +267,7 @@ PtpClock * ptpdStartup(int argc, char **argv, Integer16 *ret, RunTimeOpts *rtOpt
   }
   else
   {
+    ptpClock->runTimeOpts = *rtOpts;
     DBG("allocated %d bytes for protocol engine data\n", (int)sizeof(PtpClock));
     ptpClock->foreign = (ForeignMasterRecord*)calloc(rtOpts->max_foreign_records, sizeof(ForeignMasterRecord));
     if(!ptpClock->foreign)

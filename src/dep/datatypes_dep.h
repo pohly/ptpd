@@ -23,6 +23,10 @@ typedef struct {
 
 typedef struct {
   Integer32 eventSock, generalSock, multicastAddr, unicastAddr;
+#if defined(linux)
+  /** for further ioctl() calls on eventSock */
+  struct ifreq eventSockIFR;
+#endif
 } NetPath;
 
 #endif

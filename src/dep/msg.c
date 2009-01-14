@@ -155,7 +155,7 @@ void msgUnpackManagement(void *buf, MsgManagement *manage)
 }
 
 UInteger8 msgUnloadManagement(void *buf, MsgManagement *manage,
-  PtpClock *ptpClock, RunTimeOpts *rtOpts)
+  PtpClock *ptpClock)
 {
   TimeInternal internalTime;
   TimeRepresentation externalTime;
@@ -203,29 +203,29 @@ UInteger8 msgUnloadManagement(void *buf, MsgManagement *manage,
     break;
     
   case PTP_MM_SET_SYNC_INTERVAL:
-    rtOpts->syncInterval = *(Integer8*)(buf + 63);
+    ptpClock->runTimeOpts.syncInterval = *(Integer8*)(buf + 63);
     break;
     
   case PTP_MM_SET_SUBDOMAIN:
-    memcpy(rtOpts->subdomainName, buf + 60, 16);
-    DBG("set subdomain to %s\n", rtOpts->subdomainName);
+    memcpy(ptpClock->runTimeOpts.subdomainName, buf + 60, 16);
+    DBG("set subdomain to %s\n", ptpClock->runTimeOpts.subdomainName);
     break;
     
   case PTP_MM_SET_TIME:
     externalTime.seconds = flip32(*(UInteger32*)(buf + 60));
     externalTime.nanoseconds = flip32(*(Integer32*)(buf + 64));
     toInternalTime(&internalTime, &externalTime, &ptpClock->halfEpoch);
-    setTime(&internalTime);
+    setTime(&internalTime, ptpClock);
     break;
     
   case PTP_MM_UPDATE_DEFAULT_DATA_SET:
-    if(!rtOpts->slaveOnly)
+    if(!ptpClock->runTimeOpts.slaveOnly)
       ptpClock->clock_stratum = *(UInteger8*)(buf + 63);
     memcpy(ptpClock->clock_identifier, buf + 64, 4);
     ptpClock->clock_variance = flip16(*(Integer16*)(buf + 70));
     ptpClock->preferred = *(UInteger8*)(buf + 75);
-    rtOpts->syncInterval = *(UInteger8*)(buf + 79);
-    memcpy(rtOpts->subdomainName, buf + 80, 16);
+    ptpClock->runTimeOpts.syncInterval = *(UInteger8*)(buf + 79);
+    memcpy(ptpClock->runTimeOpts.subdomainName, buf + 80, 16);
     break;
     
   case PTP_MM_UPDATE_GLOBAL_TIME_PROPERTIES:
@@ -372,7 +372,7 @@ void msgPackHeader(void *buf, PtpClock *ptpClock)
     setFlag((buf + 34), PTP_BOUNDARY_CLOCK);
 }
 
-void msgPackSync(void *buf, Boolean burst,
+void msgPackSync(void *buf, Boolean burst, Boolean ptpAssist,
   TimeRepresentation *originTimestamp, PtpClock *ptpClock)
 {
   *(UInteger8*)(buf +20) = 1;  /* messageType */
@@ -386,7 +386,14 @@ void msgPackSync(void *buf, Boolean burst,
     setFlag((buf + 34), PARENT_STATS);
   else
     clearFlag((buf + 34), PARENT_STATS);
-  
+  /**
+   * @todo: before adding this conditional ptpAssist the PTP_ASSIST
+   * was never set although a Follow_Up was sent - a bug in the original PTPd?
+   */
+  if(ptpAssist)
+    setFlag((buf + 34), PTP_ASSIST);
+  else
+    clearFlag((buf + 34), PTP_ASSIST);
   
   *(Integer32*)(buf + 40) = flip32(originTimestamp->seconds);
   *(Integer32*)(buf + 44) = flip32(originTimestamp->nanoseconds);
@@ -411,7 +418,7 @@ void msgPackSync(void *buf, Boolean burst,
   *(Integer32*)(buf + 120) = shift8(ptpClock->utc_reasonable, 3);
 }
 
-void msgPackDelayReq(void *buf, Boolean burst,
+void msgPackDelayReq(void *buf, Boolean burst, Boolean ptpAssist,
   TimeRepresentation *originTimestamp, PtpClock *ptpClock)
 {
   *(UInteger8*)(buf + 20) = 1;  /* messageType */
@@ -425,6 +432,10 @@ void msgPackDelayReq(void *buf, Boolean burst,
     setFlag((buf + 34), PARENT_STATS);
   else
     clearFlag((buf + 34), PARENT_STATS);
+  if(ptpAssist)
+    setFlag((buf + 34), PTP_ASSIST);
+  else
+    clearFlag((buf + 34), PTP_ASSIST);
   
   *(Integer32*)(buf + 40) = flip32(originTimestamp->seconds);
   *(Integer32*)(buf + 44) = flip32(originTimestamp->nanoseconds);
@@ -457,6 +468,7 @@ void msgPackFollowUp(void *buf, UInteger16 associatedSequenceId,
   *(UInteger8*)(buf + 32) = PTP_FOLLOWUP_MESSAGE;  /* control */
   clearFlag((buf + 34), PTP_SYNC_BURST);
   clearFlag((buf + 34), PARENT_STATS);
+  clearFlag((buf + 34), PTP_ASSIST);
   
   *(Integer32*)(buf + 40) = shift16(flip16(associatedSequenceId), 1);
   *(Integer32*)(buf + 44) = flip32(preciseOriginTimestamp->seconds);
@@ -471,6 +483,7 @@ void msgPackDelayResp(void *buf, MsgHeader *header,
   *(UInteger8*)(buf + 32) = PTP_DELAY_RESP_MESSAGE;  /* control */
   clearFlag((buf + 34), PTP_SYNC_BURST);
   clearFlag((buf + 34), PARENT_STATS);
+  clearFlag((buf + 34), PTP_ASSIST);
   
   *(Integer32*)(buf + 40) = flip32(delayReceiptTimestamp->seconds);
   *(Integer32*)(buf + 44) = flip32(delayReceiptTimestamp->nanoseconds);
@@ -486,6 +499,7 @@ UInteger16 msgPackManagement(void *buf, MsgManagement *manage, PtpClock *ptpCloc
   *(UInteger8*)(buf + 32) = PTP_MANAGEMENT_MESSAGE;  /* control */
   clearFlag((buf + 34), PTP_SYNC_BURST);
   clearFlag((buf + 34), PARENT_STATS);
+  clearFlag((buf + 34), PTP_ASSIST);
   *(Integer32*)(buf + 40) = shift8(manage->targetCommunicationTechnology, 1);
   memcpy(buf + 42, manage->targetUuid, 6);
   *(Integer32*)(buf + 48) = shift16(flip16(manage->targetPortId), 0) | shift16(flip16(MM_STARTING_BOUNDARY_HOPS), 1);
@@ -516,6 +530,7 @@ UInteger16 msgPackManagementResponse(void *buf, MsgHeader *header, MsgManagement
   *(UInteger8*)(buf + 32) = PTP_MANAGEMENT_MESSAGE;  /* control */
   clearFlag((buf + 34), PTP_SYNC_BURST);
   clearFlag((buf + 34), PARENT_STATS);
+  clearFlag((buf + 34), PTP_ASSIST);
   *(Integer32*)(buf + 40) = shift8(header->sourceCommunicationTechnology, 1);
   memcpy(buf + 42, header->sourceUuid, 6);
   *(Integer32*)(buf + 48) = shift16(flip16(header->sourcePortId), 0) | shift16(flip16(MM_STARTING_BOUNDARY_HOPS), 1);
@@ -619,7 +634,7 @@ UInteger16 msgPackManagementResponse(void *buf, MsgHeader *header, MsgManagement
     *(UInteger8*)(buf + 55) = PTP_MM_GLOBAL_TIME_DATA_SET;
     *(Integer32*)(buf + 56) = shift16(flip16(24), 1);
     
-    getTime(&internalTime);
+    getTime(&internalTime, ptpClock);
     fromInternalTime(&internalTime, &externalTime, ptpClock->halfEpoch);
     *(Integer32*)(buf + 60) = flip32(externalTime.seconds);
     *(Integer32*)(buf + 64) = flip32(externalTime.nanoseconds);

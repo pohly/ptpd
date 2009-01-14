@@ -6,7 +6,8 @@ CFLAGS = -Wall
 
 PROG = ptpd
 OBJ  = ptpd.o arith.o bmc.o probe.o protocol.o \
-	dep/msg.o dep/net.o dep/servo.o dep/startup.o dep/sys.o dep/timer.o
+	dep/msg.o dep/net.o dep/servo.o dep/startup.o dep/sys.o dep/timer.o \
+	dep/time.o
 HDR  = ptpd.h constants.h datatypes.h \
 	dep/ptpd_dep.h dep/constants_dep.h dep/datatypes_dep.h
 
