@@ -360,7 +360,6 @@ Boolean netInit(PtpClock *ptpClock)
     return FALSE;
   }
 
-
   return TRUE;
 }
 
@@ -368,6 +367,21 @@ Boolean netInit(PtpClock *ptpClock)
 Boolean netShutdown(PtpClock *ptpClock)
 {
   struct ip_mreq imr;
+
+#ifdef HAVE_LINUX_NET_TSTAMP_H
+  if (ptpClock->runTimeOpts.time == TIME_SYSTEM_LINUX_HW) {
+      struct hwtstamp_config hwconfig;
+
+      ptpClock->netPath.eventSockIFR.ifr_data = (void *)&hwconfig;
+      memset(&hwconfig, 0, sizeof(&hwconfig));
+
+      hwconfig.tx_type = HWTSTAMP_TX_OFF;
+      hwconfig.rx_filter = HWTSTAMP_FILTER_NONE;
+      if (ioctl(ptpClock->netPath.eventSock, SIOCSHWTSTAMP, &ptpClock->netPath.eventSockIFR) < 0) {
+          PERROR("turning off net_tstamp SIOCSHWTSTAMP: %s", strerror(errno));
+      }
+  }
+#endif
 
   imr.imr_multiaddr.s_addr = ptpClock->netPath.multicastAddr;
   imr.imr_interface.s_addr = htonl(INADDR_ANY);
@@ -428,16 +442,16 @@ int netSelect(TimeInternal *timeout, PtpClock *ptpClock)
 
 ssize_t netRecvEvent(Octet *buf, TimeInternal *time, PtpClock *ptpClock)
 {
-  ssize_t ret;
+  ssize_t ret = 0;
   struct msghdr msg;
   struct iovec vec[1];
   struct sockaddr_in from_addr;
   union {
       struct cmsghdr cm;
-      char control[CMSG_SPACE(sizeof(struct timeval))];
+      char control[512];
   } cmsg_un;
   struct cmsghdr *cmsg;
-  struct timeval *tv;
+  Boolean have_time;
   
   vec[0].iov_base = buf;
   vec[0].iov_len = PACKET_SIZE;
@@ -454,8 +468,36 @@ ssize_t netRecvEvent(Octet *buf, TimeInternal *time, PtpClock *ptpClock)
   msg.msg_control = cmsg_un.control;
   msg.msg_controllen = sizeof(cmsg_un.control);
   msg.msg_flags = 0;
-  
-  ret = recvmsg(ptpClock->netPath.eventSock, &msg, MSG_DONTWAIT);
+
+#ifdef HAVE_LINUX_NET_TSTAMP_H
+  if(ptpClock->runTimeOpts.time == TIME_SYSTEM_LINUX_HW ||
+     ptpClock->runTimeOpts.time == TIME_SYSTEM_LINUX_SW) {
+      ret = recvmsg(ptpClock->netPath.eventSock, &msg, MSG_ERRQUEUE|MSG_DONTWAIT);
+      if(ret <= 0) {
+          if (errno != EAGAIN && errno != EINTR)
+              return ret;
+      } else {
+          /*
+           * strip network transport header: assumes that this is the
+           * most recently sent message
+           */
+          if(ret > ptpClock->netPath.lastNetSendEventLength) {
+              memmove(buf,
+                      buf + ret - ptpClock->netPath.lastNetSendEventLength,
+                      ptpClock->netPath.lastNetSendEventLength);
+              ret = ptpClock->netPath.lastNetSendEventLength;
+          } else {
+              /* No clue what this message is. Skip it. */
+              PERROR("received unexpected bounce via error queue");
+              ret = 0;
+          }
+      }
+  }
+#endif /* HAVE_LINUX_NET_TSTAMP_H */
+
+  if(ret <= 0) {
+      ret = recvmsg(ptpClock->netPath.eventSock, &msg, MSG_DONTWAIT);
+  }
   if(ret <= 0)
   {
     if(errno == EAGAIN || errno == EINTR)
@@ -483,25 +525,54 @@ ssize_t netRecvEvent(Octet *buf, TimeInternal *time, PtpClock *ptpClock)
     return 0;
   }
   
-  if(msg.msg_controllen < sizeof(cmsg_un.control))
+  for (cmsg = CMSG_FIRSTHDR(&msg), have_time = FALSE;
+       !have_time && cmsg != NULL;
+       cmsg = CMSG_NXTHDR(&msg, cmsg))
   {
-    ERROR("received short ancillary data (%d/%d)\n",
-      msg.msg_controllen, (int)sizeof(cmsg_un.control));
-    
-    return 0;
+    if (cmsg->cmsg_level == SOL_SOCKET) {
+      switch (cmsg->cmsg_type) {
+      case SCM_TIMESTAMP: {
+          struct timeval *tv = (struct timeval *)CMSG_DATA(cmsg);
+          if(cmsg->cmsg_len < sizeof(*tv))
+          {
+             ERROR("received short SCM_TIMESTAMP (%d/%d)\n",
+                   cmsg->cmsg_len, sizeof(*tv));
+             return 0;
+          }
+          time->seconds = tv->tv_sec;
+          time->nanoseconds = tv->tv_usec*1000;
+          have_time = TRUE;
+          break;
+      }
+#ifdef HAVE_LINUX_NET_TSTAMP_H
+      case SO_TIMESTAMPING: {
+          /* array of three time stamps: software, HW, raw HW */
+          struct timespec *stamp =
+              (struct timespec *)CMSG_DATA(cmsg);
+          if(cmsg->cmsg_len < sizeof(*stamp) * 3)
+          {
+             ERROR("received short SO_TIMESTAMPING (%d/%d)\n",
+                   cmsg->cmsg_len, (int)sizeof(*stamp) * 3);
+             return 0;
+          }
+          if (ptpClock->runTimeOpts.time == TIME_SYSTEM_LINUX_HW) {
+              /* look at second element in array which is the HW tstamp */
+              stamp++;
+          }
+          if (stamp->tv_sec && stamp->tv_nsec) {
+              time->seconds = stamp->tv_sec;
+              time->nanoseconds = stamp->tv_nsec;
+              have_time = TRUE;
+          }
+          break;
+      }
+#endif /* HAVE_LINUX_NET_TSTAMP_H */
+      }
+    }
   }
   
-  tv = 0;
-  for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg))
+  if(have_time)
   {
-    if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMP)
-      tv = (struct timeval *)CMSG_DATA(cmsg);
-  }
-  
-  if(tv)
-  {
-    time->seconds = tv->tv_sec;
-    time->nanoseconds = tv->tv_usec*1000;
     DBGV("kernel recv time stamp %us %dns\n", time->seconds, time->nanoseconds);
   }
   else
@@ -509,7 +580,7 @@ ssize_t netRecvEvent(Octet *buf, TimeInternal *time, PtpClock *ptpClock)
     /* do not try to get by with recording the time here, better to fail
        because the time recorded could be well after the message receive,
        which would put a big spike in the offset signal sent to the clock servo */
-    DBG("no recieve time stamp\n");
+    DBG("no receive time stamp\n");
     return 0;
   }
 
@@ -542,6 +613,7 @@ ssize_t netSendEvent(Octet *buf, UInteger16 length, TimeInternal *sendTimeStamp,
   addr.sin_family = AF_INET;
   addr.sin_port = htons(PTP_EVENT_PORT);
   addr.sin_addr.s_addr = ptpClock->netPath.multicastAddr;
+  ptpClock->netPath.lastNetSendEventLength = length;
 
   ret = sendto(ptpClock->netPath.eventSock, buf, length, 0, (struct sockaddr *)&addr, sizeof(struct sockaddr_in));
   if(ret <= 0)

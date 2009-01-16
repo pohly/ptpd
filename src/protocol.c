@@ -70,8 +70,21 @@ Boolean doInit(PtpClock *ptpClock)
     return FALSE;
   }
 
-  /* currently all of the more advanced clocks time stamp packets */
-  ptpClock->delayedTiming = ptpClock->runTimeOpts.time != TIME_SYSTEM;
+  switch (ptpClock->runTimeOpts.time) {
+  case TIME_SYSTEM:
+  case TIME_SYSTEM_LINUX_HW:
+  case TIME_SYSTEM_LINUX_SW:
+      /*
+       * send time stamp will be returned to socket when available,
+       * either via IP_MULTICAST_LOOP or SIOCSHWTSTAMP + error queue
+       */
+      ptpClock->delayedTiming = FALSE;
+      break;
+  default:
+      /* ask for time stamp shortly after sending */
+      ptpClock->delayedTiming = TRUE;
+      break;
+  }
 
   /* initialize other stuff */
   initData(ptpClock);

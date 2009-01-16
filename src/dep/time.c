@@ -104,17 +104,74 @@ static void syncSystemWithNIC(PtpClock *ptpClock)
 
 static Boolean selectNICTimeMode(Boolean sync, PtpClock *ptpClock)
 {
-  *(int *)&ptpClock->netPath.eventSockIFR.ifr_data = sync ? E1000_UDP_V1_SYNC : E1000_UDP_V1_DELAY;
   DBGV("time stamp incoming %s packets\n", sync ? "Sync" : "Delay_Req");
 
-  if(ioctl(ptpClock->netPath.eventSock, E1000_TSYNC_ENABLERX_IOCTL, &ptpClock->netPath.eventSockIFR) < 0) {
-    ERROR("could not activate E1000 hardware receive time stamping on %s: %s\n",
-          ptpClock->netPath.eventSockIFR.ifr_name,
-          strerror(errno));
-    return FALSE;
+  switch (ptpClock->runTimeOpts.time) {
+#ifdef HAVE_LINUX_NET_TSTAMP_H
+  case TIME_SYSTEM_LINUX_HW: {
+      struct hwtstamp_config hwconfig;
+      int so_timestamping_flags;
+
+      ptpClock->netPath.eventSockIFR.ifr_data = (void *)&hwconfig;
+      memset(&hwconfig, 0, sizeof(&hwconfig));
+
+      /*
+       * Configure for time stamping of incoming Sync or Delay_Req
+       * messages and for time stamping of all out-going event
+       * messages. Out-going messages will be bounced via the error
+       * queue of the event socket.
+       */
+      hwconfig.tx_type = HWTSTAMP_TX_ON;
+      hwconfig.rx_filter = sync ?
+          HWTSTAMP_FILTER_PTP_V1_L4_SYNC :
+          HWTSTAMP_FILTER_PTP_V1_L4_DELAY_REQ;
+      so_timestamping_flags = SOF_TIMESTAMPING_TX_HARDWARE|SOF_TIMESTAMPING_RX_HARDWARE|SOF_TIMESTAMPING_SYS_HARDWARE;
+
+      if (ioctl(ptpClock->netPath.eventSock, SIOCSHWTSTAMP, &ptpClock->netPath.eventSockIFR) < 0) {
+          if (errno == ERANGE) {
+              /* hardware time stamping not supported */
+              PERROR("net_tstamp SIOCSHWTSTAMP: mode of operation not supported");
+              return FALSE;
+          } else {
+              PERROR("net_tstamp SIOCSHWTSTAMP: %s", strerror(errno));
+              return FALSE;
+          }
+      }
+
+      if (setsockopt(ptpClock->netPath.eventSock, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags, sizeof(so_timestamping_flags)) < 0) {
+          PERROR("net_tstamp SO_TIMESTAMPING: %s", strerror(errno));
+          return FALSE;
+      }
+      break;
   }
-  else
-    return TRUE;
+  case TIME_SYSTEM_LINUX_SW: {
+      /* same as before, but without requiring support by the NIC */
+      int so_timestamping_flags =
+          SOF_TIMESTAMPING_TX_SOFTWARE|SOF_TIMESTAMPING_RX_SOFTWARE|SOF_TIMESTAMPING_SOFTWARE;
+      if (setsockopt(ptpClock->netPath.eventSock, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags, sizeof(so_timestamping_flags)) < 0) {
+          PERROR("net_tstamp SO_TIMESTAMPING: %s", strerror(errno));
+          return FALSE;
+      }
+      break;
+  }
+#else
+  case TIME_SYSTEM_LINUX_SW:
+  case TIME_SYSTEM_LINUX_HW:
+      PERROR("net_tstamp interface not supported");
+      return FALSE;
+#endif /* HAVE_LINUX_NET_TSTAMP_H */
+  default:
+      *(int *)&ptpClock->netPath.eventSockIFR.ifr_data = sync ? E1000_UDP_V1_SYNC : E1000_UDP_V1_DELAY;
+      if(ioctl(ptpClock->netPath.eventSock, E1000_TSYNC_ENABLERX_IOCTL, &ptpClock->netPath.eventSockIFR) < 0) {
+          ERROR("could not activate E1000 hardware receive time stamping on %s: %s\n",
+                ptpClock->netPath.eventSockIFR.ifr_name,
+                strerror(errno));
+          return FALSE;
+      }
+      break;
+  }
+
+  return TRUE;
 }
 
 static Boolean initNICTime(Boolean sync, PtpClock *ptpClock)
@@ -172,6 +229,10 @@ Boolean initTime(PtpClock *ptpClock)
 
     return initNICTime(TRUE, ptpClock);
     break;
+  case TIME_SYSTEM_LINUX_HW:
+  case TIME_SYSTEM_LINUX_SW:
+    return selectNICTimeMode(TRUE, ptpClock);
+    break;
   case TIME_NIC:
   case TIME_SYSTEM_ASSISTED:
     return initNICTime(TRUE, ptpClock);
@@ -187,6 +248,8 @@ void getTime(TimeInternal *time, PtpClock *ptpClock)
 {
   switch(ptpClock->runTimeOpts.time)
   {
+  case TIME_SYSTEM_LINUX_HW:
+  case TIME_SYSTEM_LINUX_SW:
   case TIME_SYSTEM_ASSISTED:
   case TIME_SYSTEM: {
     struct timeval tv;
@@ -224,6 +287,8 @@ void setTime(TimeInternal *time, PtpClock *ptpClock)
 {
   switch(ptpClock->runTimeOpts.time)
   {
+  case TIME_SYSTEM_LINUX_HW:
+  case TIME_SYSTEM_LINUX_SW:
   case TIME_SYSTEM_ASSISTED:
   case TIME_SYSTEM: {
     NOTIFY("resetting system clock to %ds %dns\n", time->seconds, time->nanoseconds);
@@ -275,6 +340,8 @@ void adjTime(Integer32 adj, TimeInternal *offset, PtpClock *ptpClock)
 {
   switch(ptpClock->runTimeOpts.time)
   {
+  case TIME_SYSTEM_LINUX_HW:
+  case TIME_SYSTEM_LINUX_SW:
   case TIME_SYSTEM_ASSISTED:
   case TIME_SYSTEM: {
     struct timex t;
@@ -391,6 +458,7 @@ void adjTime(Integer32 adj, TimeInternal *offset, PtpClock *ptpClock)
         ERROR("adjtimex -> unknown result %d\n", res);
         break;
     }
+    break;
   }
   case TIME_BOTH:
   case TIME_NIC: {
@@ -638,7 +706,10 @@ Boolean getReceiveTime(TimeInternal *recvTimeStamp,
 void timeNoActivity(PtpClock *ptpClock)
 {
 #ifdef PTPD_DBGV
-  if(ptpClock->runTimeOpts.time > TIME_SYSTEM)
+  switch(ptpClock->runTimeOpts.time) {
+  case TIME_NIC:
+  case TIME_BOTH:
+  case TIME_SYSTEM_ASSISTED:
   {
     TimeInternal now, ts, offset;
     struct E1000_TSYNC_COMPARETS_ARGU argu;
@@ -676,6 +747,8 @@ void timeNoActivity(PtpClock *ptpClock)
          argu.NICToSystemSign > 0 ? "" : argu.NICToSystemSign < 0 ? "-" : "?",
          argu.NICToSystem.seconds, argu.NICToSystem.nanoseconds,
          offset.seconds, offset.nanoseconds);
+    break;
+  }
   }
 #endif
   syncSystemWithNIC(ptpClock);

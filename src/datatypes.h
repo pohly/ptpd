@@ -207,10 +207,13 @@ typedef struct
 
 typedef enum {
   TIME_SYSTEM,     /**< use and control system time */
-  TIME_NIC,        /**< use and control time inside network interface */
+  TIME_NIC,        /**< use and control time inside network interface (via Intel
+                      igb ioctl()) */
   /**
-   * a combination of PTP between NICs (as in TIME_NIC) plus a local
-   * synchronization between NIC and system time:
+   * a combination of PTP between NICs (as in TIME_NIC via Intel igb
+   * ioctl()) plus a local synchronization between NIC and system
+   * time:
+   *
    * - NIC time is controlled via PTP packets, main time seen
    *   by PTPd is the NIC time
    * - system_to_nic and nic_to_system delays are provided by
@@ -229,9 +232,20 @@ typedef enum {
   TIME_BOTH,
   /**
    * time used and controlled by PTP is the system time, but hardware
-   * assistance in the NIC is used to time stamp packages
+   * assistance in the NIC is used to time stamp packages (via Intel
+   * igb ioctl())
    */
   TIME_SYSTEM_ASSISTED,
+  /**
+   * Time used and controlled by PTP is the system time with hardware
+   * packet time stamping via standard Linux net_tstamp.h API.
+   */
+  TIME_SYSTEM_LINUX_HW,
+  /**
+   * Time used and controlled by PTP is the system time with software
+   * packet time stamping via standard Linux net_tstamp.h API.
+   */
+  TIME_SYSTEM_LINUX_SW,
 
   TIME_MAX
 } Time;

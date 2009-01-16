@@ -20,6 +20,20 @@
 #include<sys/ioctl.h>
 #include<arpa/inet.h>
 
+#ifdef HAVE_LINUX_NET_TSTAMP_H
+#include "asm/types.h"
+#include "linux/net_tstamp.h"
+#include "linux/errqueue.h"
+
+#ifndef SO_TIMESTAMPNS
+# define SO_TIMESTAMPNS 35
+#endif
+
+#ifndef SIOCGSTAMPNS
+# define SIOCGSTAMPNS 0x8907
+#endif
+#endif /* HAVE_LINUX_NET_TSTAMP_H */
+
 /**
  * route output either into syslog or stderr, depending on global useSyslog settings
  * @param priority       same as for syslog()

@@ -65,6 +65,10 @@ PtpClock * ptpdStartup(int argc, char **argv, Integer16 *ret, RunTimeOpts *rtOpt
 "                         and system time against NIC via local PTP\n"
 "                  assisted = system time is synchronized across network via\n"
 "                             NIC assisted time stamping\n"
+"                  linux_hw = synchronize system time with Linux kernel assistance\n"
+"                          via net_tstamp API, uses NIC time stamping\n"
+"                  linux_sw = synchronize system time with Linux kernel assistance\n"
+"                          via net_tstamp API, uses software time stamping\n"
 "-x                do not reset the clock if off by more than one second\n"
 "-t                do not adjust the system clock\n"
 "-a NUMBER,NUMBER  specify clock servo P and I attenuations\n"
@@ -144,6 +148,14 @@ PtpClock * ptpdStartup(int argc, char **argv, Integer16 *ret, RunTimeOpts *rtOpt
       else if(!strcasecmp(optarg, "assisted"))
       {
         rtOpts->time = TIME_SYSTEM_ASSISTED;
+      }
+      else if(!strcasecmp(optarg, "linux_hw"))
+      {
+        rtOpts->time = TIME_SYSTEM_LINUX_HW;
+      }
+      else if(!strcasecmp(optarg, "linux_sw"))
+      {
+        rtOpts->time = TIME_SYSTEM_LINUX_SW;
       }
       else
       {

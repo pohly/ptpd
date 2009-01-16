@@ -27,6 +27,7 @@ typedef struct {
   /** for further ioctl() calls on eventSock */
   struct ifreq eventSockIFR;
 #endif
+  UInteger16 lastNetSendEventLength;
 } NetPath;
 
 #endif
