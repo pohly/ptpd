@@ -369,7 +369,8 @@ Boolean netShutdown(PtpClock *ptpClock)
   struct ip_mreq imr;
 
 #ifdef HAVE_LINUX_NET_TSTAMP_H
-  if (ptpClock->runTimeOpts.time == TIME_SYSTEM_LINUX_HW) {
+  if (ptpClock->runTimeOpts.time == TIME_SYSTEM_LINUX_HW &&
+      ptpClock->netPath.eventSock > 0) {
       struct hwtstamp_config hwconfig;
 
       ptpClock->netPath.eventSockIFR.ifr_data = (void *)&hwconfig;
