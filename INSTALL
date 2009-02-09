@@ -1,0 +1,13 @@
+Run make inside the src directory to compile the ptpd binary.
+
+You can influence the compilation by setting variables on the
+make command line:
+   CPPFLAGS=-DPTPD_DBGV
+        detailed debugging
+   CPPFLAGS=-DPTPD_DBG
+        less detailed debugging
+   CPPFLAGS="-DHAVE_LINUX_NET_TSTAMP_H -Idep/include"
+        enable -z linux_hw/linux_sw mode, using bundled
+        Linux header file
+
+The resulting binary works as-is without having to install it.
